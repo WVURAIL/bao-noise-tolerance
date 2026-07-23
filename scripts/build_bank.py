@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Build the per-zbin Fisher bank over a grid of integration times."""
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from baonoise.fisherbank import build_bank  # noqa: E402
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-o", "--out", default=None)
+    ap.add_argument("--nt", type=int, default=19, help="time grid points")
+    ap.add_argument("--tmin", type=float, default=1.0, help="hours")
+    ap.add_argument("--tmax", type=float, default=1e6, help="hours")
+    ap.add_argument("--nproc", type=int, default=None)
+    ap.add_argument("--epsilon-fg", type=float, default=1e-6)
+    ap.add_argument("--config", default="bull2015",
+                    choices=["bull2015", "chime2022"])
+    ap.add_argument("--cosmology", default=None,
+                    help="chime2022 only: planck2018 (default) or pact2025")
+    ap.add_argument("--dense-knee", action="store_true",
+                    help="add half-step t points through the CV knee")
+    ap.add_argument("--knee-range", nargs=2, type=float, default=(3.5, 5.83),
+                    metavar=("LOG10_LO", "LOG10_HI"),
+                    help="log10(hours) span the --dense-knee points cover; the "
+                         "default reproduces every bank built before this flag "
+                         "existed. Widen it to cover wherever the quantity you "
+                         "are refining actually moves.")
+    ap.add_argument("--knee-n", type=int, default=8,
+                    help="number of --dense-knee points")
+    ap.add_argument("--kfg-fac", type=float, default=None, metavar="KFG",
+                    help="delay-filter mode cut, kfg_fac = tau_cut_s * survey "
+                         "bandwidth_Hz (CHIME: 22 for the 55 ns first-peak-"
+                         "preserving cut, 44 for 110 ns, 80 for the deployed "
+                         "200 ns). Modeled on BOTH sides: the forecast loses "
+                         "the cut modes and the residual chain claims the "
+                         "matching suppression.")
+    ap.add_argument("--p-res", type=float, default=None, metavar="AMPLITUDE",
+                    help="add a residual-contamination template at this "
+                         "multiple of the noise power, carried as a '_Pres' "
+                         "row in the Fisher matrix. Use 1.0: the bias is "
+                         "linear in the amplitude, so one build serves every "
+                         "r, and scripts/bias_tolerance.py assumes unit "
+                         "normalization.")
+    args = ap.parse_args()
+
+    ctag = (f"_{args.cosmology}" if args.cosmology
+            and args.cosmology != "planck2018" else "")
+    # A P_res bank carries an extra parameter row and is not interchangeable
+    # with a plain one, so it never lands on the plain default name.
+    ptag = "_pres" if args.p_res is not None else ""
+    if args.kfg_fac is not None:
+        ptag += f"_kfg{args.kfg_fac:g}"
+    ktag = "_dense" if args.dense_knee else ""
+    default_name = (f"fisher_bank_chime2022{ctag}{ptag}{ktag}.npz"
+                    if args.config == "chime2022"
+                    else f"fisher_bank_chime{ptag}{ktag}.npz")
+    out = args.out or (Path(__file__).resolve().parents[1] / "data" /
+                       default_name)
+    tgrid = np.logspace(np.log10(args.tmin), np.log10(args.tmax), args.nt)
+    if args.dense_knee:
+        lo, hi = args.knee_range
+        extra = 10.0 ** np.linspace(lo, hi, args.knee_n)
+        tgrid = np.unique(np.concatenate([tgrid, extra]))
+    overrides = {}
+    if args.p_res is not None:
+        overrides["P_res"] = args.p_res
+    if args.kfg_fac is not None:
+        overrides["kfg_fac"] = args.kfg_fac
+    overrides = overrides or None
+    print(f"[bank] {len(tgrid)} time points, {tgrid[0]:.3g}-{tgrid[-1]:.3g} hr"
+          + (f", P_res={args.p_res}" if overrides else ""))
+    build_bank(out, t_grid_hours=tgrid, nproc=args.nproc,
+               epsilon_fg=args.epsilon_fg, config=args.config,
+               cosmology=args.cosmology, expt_overrides=overrides)

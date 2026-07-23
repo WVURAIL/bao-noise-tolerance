@@ -1,0 +1,20 @@
+# Python & Jupyter cache
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+
+# Large astronomical data dumps & plots
+*.fits
+*.h5
+*.hdf5
+*.npz
+*.npy
+*.pdf
+*.png
+
+# Machine-local product locations
+data/products.local.json
+
+# Build artifacts
+*.egg-info/

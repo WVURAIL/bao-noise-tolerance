@@ -1,0 +1,14 @@
+{
+  "comment": "Survey-product registry: one entry per monitored DTV channel. Resolution order per channel: explicit 'path' (products.local.json first, then here), else each search dir is tried for {freq_id}.npz then *-{freq_id}.npz. Dirs from $BAONOISE_PRODUCT_DIRS (colon-separated) are searched first; relative dirs resolve against the repo root. Machine-local additions belong in data/products.local.json (gitignored), never here.",
+  "search_dirs": ["products"],
+  "channels": {
+    "14": {"freq_id": 844}, "15": {"freq_id": 829}, "16": {"freq_id": 813},
+    "17": {"freq_id": 798}, "18": {"freq_id": 783}, "19": {"freq_id": 767},
+    "20": {"freq_id": 752}, "21": {"freq_id": 736}, "22": {"freq_id": 721},
+    "23": {"freq_id": 706}, "24": {"freq_id": 690}, "25": {"freq_id": 675},
+    "26": {"freq_id": 660}, "27": {"freq_id": 644}, "28": {"freq_id": 629},
+    "29": {"freq_id": 614}, "30": {"freq_id": 598}, "31": {"freq_id": 583},
+    "32": {"freq_id": 568}, "33": {"freq_id": 552}, "34": {"freq_id": 537},
+    "35": {"freq_id": 521}, "36": {"freq_id": 506}
+  }
+}

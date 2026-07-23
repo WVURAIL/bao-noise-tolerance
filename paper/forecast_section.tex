@@ -1,0 +1,713 @@
+% ======================================================================
+% Paper body (v2 revision): the integration-time cost of RFI masking for
+% 21 cm intensity-mapping BAO surveys, with CHIME + ATSC DTV as the
+% worked example. Numbers regenerate from bao-noise-tolerance:
+% scripts/run_forecast.py (figures/tables), scripts/fg_sensitivity.py,
+% and are guarded against drift by scripts/check_paper_numbers.py.
+% ======================================================================
+
+\section{Introduction}
+\label{sec:intro}
+
+Neutral-hydrogen intensity mapping is intended to measure large-scale
+structure over wide redshift ranges, including baryon-acoustic-oscillation
+(BAO) distances at $z\sim1$--$2.5$ \citep{SeoEisenstein2007,Bull2015}.
+CHIME has now detected the cosmological 21\,cm signal in cross-correlation
+with galaxy and quasar catalogues \citep{CHIMEDetection2023}, with the
+Ly$\alpha$ forest \citep{CHIMELya2024}, and in auto-correlation at
+$z\sim1$ \citep{CHIMEAuto2025}. These measurements also make the
+treatment of radio-frequency interference (RFI) a practical cosmology
+problem rather than only an instrument-characterisation problem.
+
+The 470--608\,MHz part of CHIME's 400--800\,MHz band contains North
+American UHF television channels 14--36, each 6\,MHz wide \citep{ATSC53}.
+For the 21\,cm line this corresponds to $z=1.33$--$2.02$. Distant
+transmitters can appear intermittently even at a protected site,
+particularly under enhanced propagation. The usual response is to flag
+contaminated time--frequency samples and remove them before mapmaking
+\citep[e.g.][]{Offringa2012,CHIMEOverview2022}. The CHIME Overview
+forecast treats persistently contaminated frequency ranges as
+unavailable, but it does not assign a science cost to the continuum
+between a clean channel and a completely dead one
+\citep[Fig.~31 and Appendix~A]{CHIMEOverview2022}.
+
+The question that motivated this work is straightforward: can masking in
+the DTV band make a BAO measurement impractical even if the detector
+performs as intended? A comparison between DTV power and a notional
+``BAO power per frame'' does not answer that question. BAO is not a
+deterministic waveform that must exceed the interference in an
+individual frame. It is a statistical feature of the three-dimensional
+power spectrum, recovered by combining many spatial and spectral modes.
+The useful comparison is therefore between a masking policy and the
+cosmological information that remains after that policy is applied.
+
+This paper isolates the \emph{variance cost of masking}. Starting from a
+per-channel masked-time fraction, we (i) map the retained samples to an
+effective thermal-noise level, (ii) account for completely removed
+bandwidth with a scalar volume-loss approximation, (iii) propagate both
+factors through the same Fisher calculation used for the CHIME Overview
+forecast, and (iv) invert the result to obtain the observing time
+required for a stated BAO target. The two channel-noise reductions used
+below are transparent limiting models, not universal bounds on all
+mapmaking or power-spectrum estimators. Likewise, the scalar treatment
+of excised bandwidth does not include the full spectral window.
+Residual RFI that survives the mask is a separate covariance and bias
+problem and is not absorbed into an ``effective integration time.''
+
+The software follows the same separation. Simon Foreman's CHIME
+adaptation of RadioFisher is retained as a versioned scientific backend
+\citep{Foreman2021,Bull2015}; the maintained \textsc{baonoise} package
+owns the channel definitions, exact frequency overlaps, masking policy,
+Fisher-bank queries, and target calculations. The DTV application is one
+worked example of that interface rather than a special case in the
+forecasting code. Throughout the paper we emphasize ratios of required
+observing time relative to the unmasked calculation. Absolute Fisher
+times remain conditional on the idealised foreground, calibration, and
+instrument assumptions, whereas the ratios provide a more direct measure
+of the additional cost introduced by a specified mask.
+
+\section{Forecast framework}
+\label{sec:framework}
+
+We use the Fisher formalism of \citet{Bull2015} in the configuration
+adopted for the CHIME collaboration's Overview forecast
+\citep[Appendix~A and Table~2]{CHIMEOverview2022}. Foreman's public
+\texttt{chime-update} branch implements the as-built four-cylinder
+geometry: four $20\,\mathrm{m}\times100\,\mathrm{m}$ cylinders on 22\,m
+centres, 256 dual-polarisation feeds per cylinder at 305\,mm pitch, with
+78\,m illuminated, and a baseline density $n(u)$ calculated from that
+layout \citep{Foreman2021}. The forecast uses a total system temperature
+$T_\mathrm{sys}=55$\,K including sky contribution, a survey area of
+$31{,}000\,\mathrm{deg}^2$, the 400--800\,MHz band divided into 15
+redshift bins, BAO-shift information only, and the idealised foreground
+setting $\epsilon_\mathrm{FG}=0$. The fiducial parameters are the Planck
+2018 final-release CMB best-fit $\Lambda$CDM values used in that branch
+\citep{Planck2018}: $h=0.6732$, $\Omega_m=0.3158$, $\sigma_8=0.812$, and
+$\sum m_\nu = 0.06$\,eV.
+
+For a redshift bin centred at $z$, the thermal-noise power entering the
+Fisher integrand can be written as
+\begin{equation}
+\label{eq:noise}
+P_N(\mathbf{k};z) =
+\frac{T_\mathrm{sys}^2(z)\,S_\mathrm{area}}
+     {n_\mathrm{pol}\,t_\mathrm{tot}\,\nu_{21}}\,
+\mathcal{I}(\mathbf{k};z).
+\end{equation}
+Here $\nu_{21}=1420.406$\,MHz, $n_\mathrm{pol}=2$, $t_\mathrm{tot}$ is
+the on-sky integration time, and $\mathcal{I}$ contains the baseline
+density, beam, and channel-window terms that are independent of
+$t_\mathrm{tot}$ \citep[Eq.~A9]{CHIMEOverview2022}. The property used
+here is $P_N\propto t_\mathrm{tot}^{-1}$.
+
+Let $F_b^{(0)}(t)$ be the unmasked Fisher matrix for redshift bin $b$ at
+integration time $t$. The masking model below returns two scalars for
+each bin: a retained-time factor $\bar{w}_b$ and a retained-volume
+factor $v_b$. The scenario matrix is then
+\begin{equation}
+\label{eq:scenario}
+F_b(t\,|\,\mathcal{M}) = v_b\,F_b^{(0)}(t\,\bar{w}_b).
+\end{equation}
+Equation~\eqref{eq:scenario} is exact for the scalar noise-and-volume
+model adopted in this paper. It is not an exact representation of
+frequency-gap mode coupling or correlated residual contamination. A
+bank of $F_b^{(0)}(t)$ matrices therefore evaluates masking scenarios
+without rerunning the expensive cosmology calculation, while preserving
+the same approximation used by the direct RadioFisher hooks. Direct and
+banked evaluations agree to better than 0.2 per cent in $\sigma_A$ for
+the tested scenarios.
+
+The BAO observable is the wiggle amplitude $A(z)$, defined through
+\begin{equation}
+\label{eq:wiggle}
+P(k,z) = P_\mathrm{smooth}(k,z)\left[1 + A(z)\,f_\mathrm{bao}(k)\right],
+\end{equation}
+with fiducial $A_\mathrm{fid}=1$ \citep{SeoEisenstein2007,Bull2015}.
+Following the Overview, each redshift bin is analysed independently and
+marginalised over $\{A,\alpha_\perp,\alpha_\parallel,b\sigma_8,
+f\sigma_8,\sigma_\mathrm{NL}\}$ without external priors. We report the
+marginalised per-bin BAO-amplitude uncertainty $\sigma_A(z_b)$; smaller
+values correspond to a more precise measurement. When a signal-to-noise
+representation is useful, we define
+\begin{equation}
+\label{eq:snr-bin}
+\left(\frac{S}{N}\right)_{\!A,b} =
+\frac{A_\mathrm{fid}}{\sigma_A(z_b)} = \frac{1}{\sigma_A(z_b)}.
+\end{equation}
+For statistically independent redshift bins, the survey-level amplitude
+signal-to-noise ratio is
+\begin{equation}
+\label{eq:snr-survey}
+\left(\frac{S}{N}\right)_{\!A,\mathrm{survey}}^{2} =
+\sum_b \left(\frac{S}{N}\right)_{\!A,b}^{2} =
+\sum_b \sigma_A^{-2}(z_b).
+\end{equation}
+We use $\sigma_A$ for per-bin plots and $(S/N)_A$ only when information
+is combined across bins. We also use the marginalised transverse scale
+error $\sigma(D_A)/D_A = \sigma(\alpha_\perp)$ and the volume-distance
+combination
+\begin{equation}
+\label{eq:dv}
+\ln D_V = \tfrac{2}{3}\ln\alpha_\perp + \tfrac{1}{3}\ln\alpha_\parallel,
+\end{equation}
+which is the quantity plotted in Fig.~31 of the Overview. We do not
+estimate a 6\,MHz BAO signal-to-noise ratio by inverting that figure.
+Instead, the 6\,MHz channel geometry is inserted before the Fisher
+matrices are marginalised, so the comparison is made in the forecast
+itself.
+
+\section{From a mask table to forecast factors}
+\label{sec:mapping}
+
+The model begins with a masked-time fraction $f(\nu)$, so a frequency
+slice retains a fraction $w(\nu)=1-f(\nu)$ of the nominal samples. We
+assume that flagged samples are removed, that the remaining thermal
+noise is diagonal in frequency before the line-of-sight transform, and
+that the mask can be summarised by a frequency-dependent duty fraction.
+These assumptions exclude residual RFI, time-dependent sky coverage, and
+the full covariance generated by an irregular spectral window.
+
+A retained slice has noise variance $\sigma^2(\nu)=\sigma_0^2/w(\nu)$.
+RadioFisher assigns one thermal-noise normalisation to each redshift
+bin, so this heteroscedastic profile must be reduced to one $\bar{w}_b$.
+We use two reductions.
+
+\paragraph{Inverse-variance sample counting.}
+If frequency samples are combined with their inverse noise variance,
+their information adds in proportion to the number of retained samples.
+The effective time factor is
+\begin{equation}
+\label{eq:wiv}
+\bar{w}_{b,\mathrm{IV}} = \langle 1-f \rangle_b, \qquad
+t_\mathrm{eff} = t_\mathrm{tot}\,\bar{w}_{b,\mathrm{IV}}.
+\end{equation}
+This is the fiducial reduction. Under the stated diagonal-noise
+assumptions it is the optimal sample-counting result for a mode with
+uniform spectral weight.
+
+\paragraph{Unweighted Fourier reduction.}
+As a deliberately less adaptive case, suppose the frequency axis is
+Fourier transformed without compensating for the channel-dependent
+noise. Each radial mode then inherits the arithmetic mean noise power,
+giving
+\begin{equation}
+\label{eq:wf}
+\bar{w}_{b,\mathrm{F}} =
+\left\langle \frac{1}{1-f} \right\rangle_b^{-1}.
+\end{equation}
+Jensen's inequality guarantees
+$\bar{w}_{b,\mathrm{F}} \le \bar{w}_{b,\mathrm{IV}}$, with equality for
+uniform $f$. This statement orders the two reductions constructed here;
+it does not prove that every real estimator lies between them.
+Calibration errors, correlated noise, nonuniform sky weights, or
+additional mode cuts can make a real analysis worse than either scalar
+model. For uniform masking, both reductions give $\bar{w}=1-f$, and in
+the noise-dominated limit the required integration time increases by
+$1/(1-f)$.
+
+\subsection{Exact channel--bin overlap}
+\label{sec:overlap}
+
+A 6\,MHz television channel does not generally align with a Fisher
+redshift bin. For a bin $z\in[z_b^-,z_b^+]$, the corresponding frequency
+interval is
+\begin{equation}
+\label{eq:bin-freq}
+\nu_b^- = \frac{\nu_{21}}{1+z_b^+}, \qquad
+\nu_b^+ = \frac{\nu_{21}}{1+z_b^-}.
+\end{equation}
+ATSC channel $c$ occupies
+\begin{equation}
+\label{eq:channel-freq}
+\nu_c^- = 470 + 6(c-14), \qquad
+\nu_c^+ = \nu_c^- + 6 \quad [\mathrm{MHz}].
+\end{equation}
+Its contribution to bin $b$ is weighted by the exact overlap
+\begin{equation}
+\label{eq:overlap}
+\Delta\nu_{bc} =
+\left[\min(\nu_b^+,\nu_c^+) - \max(\nu_b^-,\nu_c^-)\right]_+,
+\end{equation}
+where $[x]_+=\max(x,0)$. Equations~\eqref{eq:wiv} and \eqref{eq:wf} are
+evaluated with these overlap lengths, including the clean part of the
+bin. Channels that cross a redshift-bin boundary are split between the
+two bins rather than assigned to the nearest centre.
+
+\subsection{Excision as a volume approximation}
+\label{sec:excision}
+
+A frequency interval that is removed completely is treated differently
+from a retained interval with high noise. If a total bandwidth
+$B_{\mathrm{exc},b}$ is excised from a bin of bandwidth $B_b$, we use
+\begin{equation}
+\label{eq:volume}
+v_b = 1 - \frac{B_{\mathrm{exc},b}}{B_b}
+\end{equation}
+as a first-order loss of physical survey volume. The thermal-noise
+factor $\bar{w}_b$ is then computed over the surviving bandwidth only.
+This is the same scalar approximation implemented by the RadioFisher
+hook; it neglects the detailed $k_\parallel$ window produced by the
+gaps.
+
+The excision threshold is not universal. A useful analytic check can be
+derived for one contaminated slice occupying a fraction $q$ of a bin.
+In the noise-dominated, inverse-variance limit, retaining a slice
+masked by fraction $f$ gives
+\begin{equation}
+\label{eq:excision-ratios}
+\begin{aligned}
+R_\mathrm{keep} &= \frac{t_\mathrm{keep}}{t_0} = \frac{1}{1-qf},\\[2pt]
+R_\mathrm{exc} &= \frac{t_\mathrm{exc}}{t_0} = \frac{1}{\sqrt{1-q}},
+\end{aligned}
+\end{equation}
+where the square root in $R_\mathrm{exc}$ follows because Fisher
+information is linear in volume and proportional to $t^2$ in the
+noise-dominated limit. The crossover is
+\begin{equation}
+\label{eq:crossover}
+f_\star = \frac{1-\sqrt{1-q}}{q} = \frac{1}{1+\sqrt{1-q}}.
+\end{equation}
+For small $q$, $f_\star\to0.5$, which motivates the 0.5 default used
+for the worked example, but the actual choice should be checked against
+the science target and the full Fisher bank.
+
+Channel 30 overlaps 3.84\,MHz of the $z=1.40$--$1.50$ bin, or
+$q=0.162$, giving $f_\star=0.522$ in this analytic limit. The adopted
+$f=0.97$ is therefore on the excision side of the crossover.
+Recovering clean-equivalent depth \emph{within that slice} would
+require $1/(1-f)\simeq33$ times as much integration, but this is not a
+factor of 33 for the whole bin or survey. In the direct Fisher
+calculation, channel-30 excision produces a 0.8 per cent survey-level
+penalty and changes the worst-bin 2 per cent $D_A$ target from 0.318 to
+0.363 on-sky years. This direct factor, 1.14, exceeds the analytic
+$R_\mathrm{exc}=1/\sqrt{1-q}=1.09$ because
+Eq.~\eqref{eq:excision-ratios} holds in the noise-dominated limit,
+whereas the bin is partially cosmic-variance limited at this target;
+volume removed from a partly sample-variance-limited bin cannot be
+fully recovered with additional integration time. Retaining the
+channel gives 0.377 years under inverse-variance weighting and 1.984
+years under the unweighted-Fourier reduction. For this channel and this
+target, excision is the lower-cost option under either convention.
+
+\section{Software and reproducibility}
+\label{sec:usage}
+
+The software is organised around a narrow boundary between a historical
+forecast code and the new masking calculation. The RadioFisher fork
+preserves the CHIME implementation and supplies only the Fisher backend
+and optional frequency-weight/volume hooks. It is not used as the
+public interface for mask construction or scenario analysis, and
+unrelated RadioFisher survey paths do not need to be modernised for
+this project. The \textsc{baonoise} package contains the channel
+definitions, pilot-proxy ingestion, exact overlap calculation,
+weighting reductions, excision policy, Fisher-bank interpolation,
+marginalisation, and required-time inversion.
+
+The expensive step is the clean Fisher bank. For each redshift bin, the
+full matrix is tabulated on a logarithmic integration-time grid.
+Building the CHIME bank takes approximately 20 minutes on two cores and
+is required only when the instrument, cosmology, redshift bins, or
+forecast assumptions change. Masking scenarios then use
+Eq.~\eqref{eq:scenario}, reducing a query to interpolation and matrix
+marginalisation. A mask table can therefore be evaluated in
+milliseconds:
+
+\begin{verbatim}
+from baonoise import api
+
+fc = api.load()
+mask = {17: 0.333,
+        30: 0.970,
+        31: 0.235}
+
+api.required_time(fc, mask, target=5.0)
+api.required_time(fc, mask,
+                  target=5.0, zbin=6)
+api.tolerance_curve(fc, band="dtv")
+\end{verbatim}
+
+The unmasked CHIME calculation is treated as the regression baseline.
+The repository writes the per-bin $\sigma(D_V)/D_V$ comparison
+alongside every forecast run. The verification suite also compares bank
+interpolation with direct Fisher evaluations, checks the expected
+noise-dominated and cosmic-variance scaling, and evaluates the same
+scenarios through the direct RadioFisher hooks and the banked path.
+Unit tests cover channel edges, exact partial overlap, the no-mask
+identity, uniform masking, excision versus retained-time accounting,
+and agreement between the piecewise overlap calculation and the
+frequency-weight hook. Before archival release, the RadioFisher
+commit, cosmological configuration, redshift edges, baseline file
+checksum, mask-table checksum, and bank metadata should be pinned in a
+single versioned reference bundle.
+
+This structure is deliberate. It keeps the original forecast provenance
+visible while allowing the maintained package to remain small enough to
+test. The same interface can be reused for another experiment after
+building a compatible clean Fisher bank. It applies directly to
+contaminants that can be represented by a retained-time fraction and/or
+excised frequency intervals; it does not imply that every contaminant
+has the same residual covariance or bias model.
+
+\section{Worked example: CHIME under DTV masking}
+\label{sec:example}
+
+\subsection{Masking scenarios}
+\label{sec:scenarios}
+
+We use two scenario families.
+
+\paragraph{Uniform stress tests.}
+A common masked fraction $f$ is applied either to the full
+470--608\,MHz DTV band or to the complete 400--800\,MHz survey band.
+These scenarios isolate the scaling with masked fraction and generate
+the tolerance curves (Fig.~\ref{fig:tolerance}).
+
+\paragraph{Pilot-proxy-derived configuration.}
+Table~\ref{tab:mask} uses the exposure-weighted per-channel fractions
+from the current pilot-proxy survey product \citep{PilotProxy}.
+Quarterly fractions are weighted by the corresponding number of valid
+frames. Channels 24 and 30 are marked ``refused'' by that calibration
+procedure because a clean zero point is not available; the worked
+example assigns them $f=0.97$ as an explicit modelling value and
+excises them under the default $f_\mathrm{exc}=0.5$ policy. The other
+channels retain their measured weighted fractions. This table is the
+example used in the numerical results, not a universal model for the
+DTV environment at every site or epoch.
+
+The largest effects occur in three redshift regions: channel 30 and the
+31--35 cluster near $z\simeq1.4$--$1.5$, channel 24 near
+$z\simeq1.65$, and channel 17 near $z\simeq1.9$. We therefore report
+both survey-level quantities and targets in the affected bins.
+
+\begin{table}[t]
+\centering
+\caption{Per-channel masked-time fractions $f_c$ used for the
+pilot-proxy-derived worked example. Channel $c$ occupies the 6\,MHz
+interval defined by Eq.~\eqref{eq:channel-freq}. Channels marked
+``exc.''\ are above the adopted 0.5 threshold and are represented as
+volume loss.}
+\label{tab:mask}
+\small
+\begin{tabular}{rl|rl|rl}
+\toprule
+$c$ & $f_c$ & $c$ & $f_c$ & $c$ & $f_c$ \\
+\midrule
+14 & 0.012 & 22 & 0.010 & 30 & 0.970 (exc.) \\
+15 & 0.010 & 23 & 0.017 & 31 & 0.235 \\
+16 & 0.014 & 24 & 0.970 (exc.) & 32 & 0.140 \\
+17 & 0.333 & 25 & 0.014 & 33 & 0.101 \\
+18 & 0.011 & 26 & 0.040 & 34 & 0.023 \\
+19 & 0.012 & 27 & 0.020 & 35 & 0.138 \\
+20 & 0.011 & 28 & 0.014 & 36 & 0.012 \\
+21 & 0.013 & 29 & 0.013 & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Unmasked regression against the Overview forecast}
+\label{sec:regression}
+
+The masking calculation is applied only after the unmasked forecast is
+validated. At the Overview normalisation of 8,760 on-sky hours, the
+clean per-bin volume-distance errors run from 0.47 per cent at
+$z=0.85$, through 0.62 per cent at $z=1.45$, to 1.04 per cent at
+$z=2.43$. They reproduce the percent-level scale and redshift
+dependence of the ideal-CHIME error bars in Fig.~31 of
+\citet{CHIMEOverview2022} using the same instrument, cosmology,
+binning, information flags, and marginalisation. The corresponding
+forecast survey-level BAO-amplitude signal-to-noise ratio is 48.45 at
+one on-sky year. These machine-readable values are used as the no-mask
+regression product; masking is not allowed to change bins outside its
+frequency support.
+
+For the pilot-proxy-derived configuration, $\sigma(D_V)/D_V$ at
+$z=1.45$ increases from 0.62 to 0.738 per cent, and at $z=1.65$ from
+0.712 to 0.860 per cent. Bins outside the DTV redshift range are
+unchanged.
+
+\subsection{Results}
+\label{sec:results}
+
+Table~\ref{tab:survey} reports the survey-level BAO-amplitude
+signal-to-noise ratio after two on-sky years and the integration-time
+penalty for a survey-level target of $(S/N)_A=5$. At this low target
+the calculation is in the noise-dominated regime, so the same ratios
+apply closely to other modest survey-level amplitude targets. The
+aggregate $(S/N)_A=5$ target is weak for a CHIME-like Fisher forecast
+because the uncontaminated parts of the band carry substantial
+information. Per-bin distance and amplitude-S/N targets are therefore
+more diagnostic of whether the DTV redshifts remain useful
+(Table~\ref{tab:bins}, Fig.~\ref{fig:perbin}).
+
+\begin{table}[t]
+\centering
+\caption{Survey-level results. $(S/N)_A(2\,\mathrm{yr})$ uses 17,520
+on-sky hours. The last column is the time required to reach a
+survey-level target of $(S/N)_A=5$, relative to the clean case. Values
+in parentheses use the unweighted-Fourier reduction where it differs
+from the fiducial inverse-variance result.}
+\label{tab:survey}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcc}
+\toprule
+Scenario & $(S/N)_A(2\,\mathrm{yr})$ & $t/t_\mathrm{clean}$ \\
+\midrule
+No masking & 63.06 & 1.000 \\
+Pilot-proxy-derived & 61.46 (61.40) & 1.032 (1.034) \\
+25\% of DTV band masked & 60.52 & 1.075 \\
+50\% of DTV band masked & 57.42 & 1.151 \\
+75\% of DTV band masked & 53.46 & 1.218 \\
+97\% of DTV band masked & 49.30 & 1.255 \\
+50\% of entire band masked & 48.45 & 2.000 \\
+ch30 excised & 62.51 & 1.008 \\
+ch30 retained & 62.68 (59.78) & 1.013 (1.064) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{On-sky time to per-bin targets in the two most affected bins.
+One on-sky year is defined as 8,760 accumulated hours, matching the
+Overview forecast normalisation. No calendar-duty factor is assumed.}
+\label{tab:bins}
+\small
+\setlength{\tabcolsep}{2.6pt}
+\begin{tabular}{llcc}
+\toprule
+$z$ bin & Scenario & $(S/N)_{A,b}=5$ & $\sigma(D_A)\le2\%$ \\
+\midrule
+1.40--1.50 & clean & 0.177\,yr & 0.318\,yr \\
+1.40--1.50 & pilot-proxy & 0.238\,yr & 0.426\,yr \\
+1.40--1.50 & pilot-proxy (F) & 0.239\,yr & 0.428\,yr \\
+1.40--1.50 & 50\% DTV masked & 0.353\,yr & 0.636\,yr \\
+1.40--1.50 & ch30 retained (F) & 1.103\,yr & 1.984\,yr \\
+1.40--1.50 & ch30 excised & 0.203\,yr & 0.363\,yr \\
+1.60--1.70 & clean & 0.212\,yr & 0.416\,yr \\
+1.60--1.70 & pilot-proxy & 0.289\,yr & 0.554\,yr \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig2_required_time_vs_masking.pdf}
+\caption{On-sky observing time required for three BAO targets as a
+function of a uniform masked fraction across 470--608\,MHz. The
+isolated markers at the left edge show the pilot-proxy-derived
+scenario; their horizontal location is only a plotting convention and
+is not an effective uniform mask fraction.}
+\label{fig:tolerance}
+\end{figure}
+
+The pilot-proxy-derived configuration increases the survey-level time
+by 3.2 per cent under the fiducial reduction. In the most affected
+bin, the 2 per cent $D_A$ target moves from 0.318 to 0.426 on-sky
+years, a factor 1.34. The inverse-variance and unweighted-Fourier
+results differ by only 0.5 per cent for that target after the two
+near-persistent channels are excised. Most of the cost comes from the
+excised bandwidth and the channels with $f\gtrsim0.1$, not from the
+channels masked at the one-to-few per cent level.
+
+Uniformly masking half of the DTV band gives a 15.1 per cent
+survey-level penalty. In the $z=1.40$--$1.50$ bin, which lies wholly
+inside the DTV band, the 2 per cent $D_A$ target doubles from 0.318 to
+0.636 on-sky years, as expected for uniform 50 per cent masking in the
+noise-dominated limit. The separate 50 per cent whole-band test gives
+exactly a factor of two at survey level and serves as an internal
+scaling check. The 97 per cent DTV stress test still leaves a moderate
+survey-level amplitude penalty because the clean frequencies outside
+470--608\,MHz dominate that aggregate target; it should not be read as
+evidence that the DTV redshift bins remain precise.
+
+The channel-30 comparison shows why a single survey-level number is not
+enough. Excision changes the survey-level time by only 0.8 per cent
+but costs 16.2 per cent of the $z=1.40$--$1.50$ bin's scalar volume.
+Retaining the channel is only slightly worse under inverse-variance
+weighting, but it is a factor 6.24 worse than clean for the bin-level
+$D_A$ target under the unweighted-Fourier reduction. The practical
+conclusion is narrower than ``always excise persistent RFI'': for
+channel 30, at the adopted $f=0.97$ and for the targets considered
+here, excision is less expensive than retention.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig4_perbin_significance.pdf}
+\caption{Marginalised per-redshift-bin BAO-amplitude uncertainty
+$\sigma_A$ after one on-sky year (8,760\,hr), shown as a percentage
+because $A_\mathrm{fid}=1$. Larger values correspond to weaker
+constraints. Curves are shown for the clean, pilot-proxy-derived, and
+50 per cent uniform DTV-band scenarios. The shaded region is the
+470--608\,MHz DTV band, and the localized increases near
+$z\simeq1.45$, 1.65, and 1.9 follow the exact channel--bin overlaps.}
+\label{fig:perbin}
+\end{figure}
+
+\subsection{Sensitivity to modelling choices}
+\label{sec:robust}
+
+The main numerical conclusions are stable under four checks. First,
+once channels 24 and 30 are excised, the two noise reductions give
+nearly the same answer for the pilot-proxy-derived scenario: the survey
+penalties are 1.032 and 1.034, and the worst-bin $D_A$ times are 0.426
+and 0.428 on-sky years. The large difference appears only when a
+near-dead slice is deliberately kept in an unweighted transform.
+
+Second, the analysis was repeated with the original five-cylinder CHIME
+design study in \citet{Bull2015}, which differs in geometry, noise
+model, sky area, cosmology, and parameter treatment. The whole-band 50
+per cent test remains exactly a factor of two. The pilot-proxy-derived
+worst-bin $D_A$ penalty changes from 1.34 to 1.43, while the
+survey-level 50 per cent DTV penalty changes from 1.15 to 1.28 because
+the DTV band contributes a different fraction of the total
+information. These comparisons support using penalty ratios, but they
+do not make the absolute times instrument independent.
+
+Third, in the Bull-configuration bank, increasing the
+foreground-residual amplitude from $\epsilon_\mathrm{FG}=10^{-6}$ to
+$10^{-5}$ changes absolute times by approximately 3 per cent and
+masking penalties by at most 0.4 per cent. This is a limited
+sensitivity test, not a substitute for a realistic foreground and
+calibration covariance.
+
+Fourth, the fiducial cosmology. Rebuilding the CHIME bank with the
+P-ACT-LB parameters from the Atacama Cosmology Telescope DR6 release
+\citep{ACTDR6}, which combine ACT with \textit{Planck}, CMB lensing,
+and BAO data, shifts absolute required times by approximately 10 per
+cent --- the clean survey-level $(S/N)_A=5$ time moves from 211.5 to
+189.5 on-sky hours --- while changing every masking penalty in
+Tables~\ref{tab:survey} and \ref{tab:bins} by at most 0.13 per cent.
+Both fiducial cosmologies ship as named configurations of the tool.
+
+All times in the tables and figures are accumulated on-sky hours, with
+8,760\,hr labelled as one on-sky year to match the Overview forecast.
+We do not infer a transferable calendar-duty factor from a selected
+CHIME analysis data set. Night-only selection, calibration quality
+cuts, missing days, and RFI masking describe different losses and
+cannot be collapsed into one survey efficiency without a separate
+accounting model. Calendar time can be reported once an
+experiment-specific end-to-end efficiency is specified, but applying
+such a factor here would risk double-counting the RFI mask whose cost
+we are trying to isolate.
+
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{What the forecast answers.}
+The calculation answers how much additional integration is required
+after a specified set of samples has been removed, within the CHIME
+Fisher model. It can distinguish a small amount of masking spread
+across many channels from a near-persistent transmitter concentrated in
+one channel, and it reports the result either for the full survey or
+for the redshift bins that actually contain the interference. This is
+the appropriate level at which to ask whether masking alone makes a DTV
+redshift impractical.
+
+\paragraph{Spectral-window limitations.}
+The scalar volume factor in Eq.~\eqref{eq:volume} does not preserve the
+exact line-of-sight window. Disconnected frequency support couples
+$k_\parallel$ modes, can redistribute foreground leakage, and may
+remove more information than the bandwidth fraction alone suggests. An
+exact treatment would propagate the mask through the mapmaking or
+quadratic-estimator covariance, for example in an $m$-mode framework
+\citep{Shaw2014,Shaw2015}. The present calculation should therefore be
+read as a first-order tolerance forecast. The approximation is easiest
+to defend for small excised fractions and should be revisited when
+broad or numerous gaps dominate a bin.
+
+\paragraph{Residual contamination.}
+Sub-threshold RFI is not equivalent to missing integration time. A
+stochastic, decorrelated residual may add covariance; a coherent,
+cyclostationary, or spectrally structured residual can also bias the
+recovered BAO parameters. For a detector threshold $\tau$, lowering
+the threshold generally masks more data while reducing the residual. A
+complete threshold optimisation would minimise a quantity such as
+\begin{equation}
+\label{eq:mse}
+\mathrm{MSE}[\widehat{A};\tau] = \sigma_A^2(\tau) + b_A^2(\tau),
+\end{equation}
+where this paper supplies the masking contribution to the variance term
+and a separate residual model must supply any additional covariance and
+the bias $b_A$. The pilot-proxy detector operating curve is the
+natural input to that companion calculation.
+
+\paragraph{Software scope.}
+The maintained result is the small scenario-to-science-cost interface,
+not a wholesale rewrite of RadioFisher. Keeping the CHIME forecast
+backend close to Foreman's validated branch reduces the chance that an
+unrelated software update changes the reference forecast. New
+experiments can use the same mask and target machinery after producing
+their own clean Fisher bank. New contaminants can use the same
+interface when their first-order effect is sample loss or excised
+bandwidth; residual-specific physics requires an additional model
+rather than another scalar hook.
+
+\paragraph{Applications beyond this example.}
+The inputs are deliberately minimal --- a clean Fisher bank for the
+instrument and a per-channel masked-time table for the contaminant ---
+so the calculation is not specific to CHIME or to television.
+Upcoming and proposed 21\,cm surveys occupy similarly contested
+spectrum, including CHORD at 300--1500\,MHz \citep{CHORD2019}, HIRAX
+at 400--800\,MHz under a different regulatory environment
+\citep{HIRAX2022}, and PUMA at 200--1100\,MHz \citep{PUMA2019}; each
+is supported by Fisher-level forecasting from which a clean bank can
+be built, after which the mask-to-time machinery applies without
+modification. The contaminant need not be broadcast television:
+mobile-broadband allocations, aeronautical and radar carriers, or
+satellite downlinks enter identically whenever their first-order
+effect is flagged time or excised bandwidth. The same conversion
+speaks to spectrum management. Protection criteria for radio
+astronomy are conventionally stated as tolerable percentages of
+observing time affected by interference \citep{ITURRA769}; the
+present framework turns such a percentage into the quantity an
+observatory actually budgets --- the additional observing time
+required to reach a stated science target, survey-wide or in the
+specific redshift bins at risk. Finally, for detector designers, the
+tolerance curve supplies the variance half of the threshold
+optimisation in Eq.~\eqref{eq:mse} for any flagging strategy whose
+statistics can be summarised per channel.
+
+\section{Conclusions}
+\label{sec:conclusions}
+
+The motivating concern was whether DTV masking by itself could make the
+corresponding CHIME BAO redshifts unusable. Within the idealised CHIME
+Overview Fisher model and the scalar mask treatment used here, the
+answer is no for the pilot-proxy-derived configuration: the
+survey-level integration time increases by 3.2 per cent, and the most
+affected 2 per cent $D_A$ target increases by a factor 1.34. A uniform
+50 per cent mask across the full DTV band increases the survey-level
+time by a factor 1.15, although the affected bin-level distance targets
+double. The distinction matters because clean frequencies can hide
+severe local losses in a survey-wide S/N summary.
+
+For a near-persistent channel, the correct comparison is between
+retaining a noisy slice and losing its overlapped volume, not between
+instantaneous DTV and BAO powers. Channel 30 overlaps 16.2 per cent of
+the relevant redshift bin. At the adopted $f=0.97$, excision is less
+expensive than retention for the targets considered here, particularly
+for an unweighted spectral transform. The 0.5 excision threshold is a
+useful default, not a universal constant; Eq.~\eqref{eq:crossover} and
+the Fisher bank provide a direct way to check it for another channel or
+target.
+
+These conclusions apply to the variance cost of samples that are
+actually removed. They do not show that residual DTV contamination is
+harmless, and they do not include the complete mode coupling from
+spectral gaps. Combining the masking-cost calculation with a
+threshold-dependent residual covariance and bias model is the next step
+needed to decide how aggressive an RFI detector should be.
+
+\section*{Data and software availability}
+
+The analysis package and manuscript source distributed with this draft
+contain the Fisher banks, the pilot-proxy-derived mask table,
+machine-readable result tables, and the scripts used to generate the
+figures; the maintained repository is
+\url{https://github.com/WVURAIL/bao-noise-tolerance}. The RadioFisher backend is available from the author's fork
+\citep{RadioFisherFork}, which is based on Foreman's public CHIME
+branch \citep{Foreman2021}. The archival release associated with
+publication should pin the exact commits and record checksums for the
+baseline-density file, mask table, cosmological configuration, and
+Fisher bank.

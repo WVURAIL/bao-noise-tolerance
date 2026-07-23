@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "baonoise"
+version = "0.1.0"
+description = "RFI-masking noise-tolerance forecasts for 21cm BAO detection with RadioFisher + pilot-proxy"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Dylan Gormley" }]
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+]
+
+# camb is only needed to regenerate the fiducial P(k) cache, and the caches
+# this project uses are committed under data/. Requiring it forced a Fortran
+# cosmology package on anyone who just wanted to run a forecast.
+[project.optional-dependencies]
+pk = ["camb"]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

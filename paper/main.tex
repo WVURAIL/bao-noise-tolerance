@@ -1,0 +1,66 @@
+% Standalone paper: the integration-time cost of RFI masking for 21 cm
+% intensity-mapping BAO surveys. Compiles with the stock article class so
+% it builds anywhere; port the preamble to AASTeX (aastex631) for ApJ
+% submission -- the body (forecast_section.tex) needs no changes.
+%
+% NOTE: this source is a faithful reconstruction of the author's revised
+% v2 manuscript (July 2026 PDF) plus three reviewed additions: the
+% fiducial-cosmology robustness check in Sec 5.4, the Eq (13)-vs-Table 3
+% cross-check sentence in Sec 3.2, and the standardized auto-correlation
+% reference. If the original v2 .tex exists elsewhere, prefer it and
+% port those three fixes.
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=2.0cm,columnsep=0.75cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[round,authoryear]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\graphicspath{{../out/}}
+\setlength{\bibsep}{2pt}
+
+\title{The integration-time cost of RFI masking for 21\,cm
+intensity-mapping BAO surveys}
+\author{Dylan Gormley \\ {\small West Virginia University}}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Abstract}
+
+Radio-frequency interference (RFI) masking removes data from 21\,cm
+intensity-mapping surveys, but the relevant feasibility question is not
+whether an interferer is brighter than the BAO signal in a single frame.
+BAO is inferred statistically from the three-dimensional power spectrum,
+so what matters is how much cosmological information remains after
+masking. We develop a first-order mapping from per-channel masked-time
+fractions to effective thermal noise and usable bandwidth in a Fisher
+forecast. We consider inverse-variance sample counting and an
+intentionally unweighted Fourier reduction of heteroscedastic channel
+noise. Jensen's inequality orders these two reductions within the
+adopted diagonal-noise model, but they are not claimed to bound every
+analysis pipeline. Complete frequency excision is represented by a
+scalar loss of survey volume; the additional radial-mode coupling from
+spectral gaps and the covariance or bias from residual unmasked RFI are
+outside this calculation. The method is implemented in the
+\textsc{baonoise} package, with a versioned RadioFisher/CHIME
+calculation retained as the forecasting backend. The unmasked
+calculation is checked against the CHIME Overview forecast before any
+masking model is applied. For the pilot-proxy-derived DTV configuration
+used as the worked example, the survey-level integration-time penalty is
+3.2 per cent, while the time required for a 2 per cent
+transverse-distance measurement in the most affected redshift bin
+increases by a factor 1.34. Uniformly masking half of the
+470--608\,MHz DTV band increases the survey-level time by a factor
+1.15. A channel masked 97 per cent of the time is more economically
+excised than retained in this model. These results quantify the
+variance cost of masking; a complete detector-threshold calculation also
+requires a model for the residual RFI that survives the mask.
+
+\input{forecast_section}
+
+\bibliographystyle{abbrvnat}
+\bibliography{refs}
+
+\end{document}
