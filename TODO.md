@@ -109,3 +109,24 @@ chapter's verdicts stand on:
 - FA machinery validated on real quiet frames (ch29: empirical exceedance
   matches (N+1-rho)/(N+1) at rho = 100/115/124, three pseudo-designated
   bins).
+
+## Figure provenance: reconstructed scripts LANDED 2026-08-12
+The three dissertation figures that had no committed source are now
+regenerable: scripts/plot_vsb_layout.py and
+scripts/plot_dirichlet_duality.py (deterministic schematics from the
+standard's numbers and the Dirichlet kernel), and
+scripts/plot_worked_example.py with data/worked_example_ch506.csv (values
+recovered from the archived figure's vector data and pinned to the survey
+product's quoted numbers; the script asserts every quoted statistic before
+drawing). Remaining items:
+- Regenerate data/worked_example_ch506.csv from the survey trawl products
+  (pilot-proxy analysis/dump_spectra.py) so the recovered values are
+  replaced by first-source ones; the script's assertions gate the swap.
+- fig_census_map.png is a RabbitEars export (xmtrs_120miles.png, cropped)
+  rather than a generated figure. Build our own map from data/census with
+  the 500-mile radius, sight lines, and markers by class, so the map is
+  regenerable like the rest. Not a priority.
+- Decide whether scripts/plot_coherence_aids.py's two figures
+  (fig_phasor_walk, fig_hypothesis_bank) join the pipeline chapter's
+  coherent-integration section or the script is retired; it is committed
+  but currently unused by the dissertation.
