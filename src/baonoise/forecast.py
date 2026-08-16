@@ -17,9 +17,9 @@ from __future__ import annotations
 import numpy as np
 from scipy.optimize import brentq
 
+from . import survey
 from .fisherbank import FisherBank
 from .scenarios import Scenario
-from . import survey
 
 EXCLUDE = ["Tb", "sigma8tot", "n_s", "fs8", "bs8", "pk"]
 EXPAND = ["b_HI", "f", "aperp", "apar"]
@@ -31,6 +31,100 @@ EXCLUDE_PERBIN = ["b_HI", "f", "Tb", "sigma8tot", "n_s", "pk"]
 
 V_FRAC_MIN = 1e-6
 
+FORECAST_STYLES = frozenset({"shared_A", "perbin_A"})
+
+# Eigenmodes below this relative scale cannot be distinguished reliably from
+# a Fisher-matrix null space. Treating them as information and blindly taking
+# a pseudoinverse can turn an unconstrained parameter into a small, finite
+# error bar. A 1e12 condition-number limit is conservative relative to the
+# committed banks in their canonical forecast styles (O(1e6) or better).
+FISHER_CONDITION_LIMIT = 1e12
+FISHER_NULLSPACE_RTOL = np.sqrt(np.finfo(float).eps)
+
+
+def _finite_scalar(value, name: str) -> float:
+    """Return *value* as a finite scalar, with a useful public-API error."""
+    try:
+        out = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a finite scalar") from exc
+    if not np.isfinite(out):
+        raise ValueError(f"{name} must be a finite scalar")
+    return out
+
+
+def _positive_finite_scalar(value, name: str) -> float:
+    out = _finite_scalar(value, name)
+    if out <= 0.0:
+        raise ValueError(f"{name} must be greater than zero")
+    return out
+
+
+def _nonnegative_finite_scalar(value, name: str) -> float:
+    out = _finite_scalar(value, name)
+    if out < 0.0:
+        raise ValueError(f"{name} must be greater than or equal to zero")
+    return out
+
+
+def _time_bracket(t_lo, t_hi) -> tuple[float, float]:
+    lo = _positive_finite_scalar(t_lo, "t_lo")
+    hi = _positive_finite_scalar(t_hi, "t_hi")
+    if lo >= hi:
+        raise ValueError("t_lo must be less than t_hi")
+    return lo, hi
+
+
+def _variance_from_fisher(F: np.ndarray, coefficients: np.ndarray) -> float:
+    """Variance of a linear parameter combination after marginalisation.
+
+    A singular Fisher matrix can still constrain a combination that is
+    orthogonal to its null space. Conversely, ``pinv(F)`` alone returns an
+    artificially finite variance for a combination that overlaps a discarded
+    eigenmode. Test estimability first, and use the inverse/pseudoinverse only
+    for combinations that are actually constrained.
+    """
+    F = np.asarray(F, dtype=float)
+    coefficients = np.asarray(coefficients, dtype=float)
+    if (F.ndim != 2 or F.shape[0] != F.shape[1]
+            or coefficients.shape != (F.shape[0],)):
+        raise ValueError("Fisher matrix and coefficient vector shapes disagree")
+    if F.size == 0 or not np.all(np.isfinite(F)) \
+            or not np.all(np.isfinite(coefficients)):
+        return np.inf
+
+    F = 0.5 * (F + F.T)
+    eigenvalues, eigenvectors = np.linalg.eigh(F)
+    largest = float(eigenvalues[-1])
+    if largest <= 0.0:
+        return np.inf
+
+    cutoff = largest / FISHER_CONDITION_LIMIT
+    # A materially negative eigenvalue is not a valid Fisher matrix. Small
+    # roundoff-level negatives are treated as null modes below.
+    if eigenvalues[0] < -cutoff:
+        return np.inf
+    constrained = eigenvalues > cutoff
+    null_vectors = eigenvectors[:, ~constrained]
+    if null_vectors.size:
+        projected = np.linalg.norm(null_vectors.T @ coefficients)
+        scale = max(1.0, float(np.linalg.norm(coefficients)))
+        if projected > FISHER_NULLSPACE_RTOL * scale:
+            return np.inf
+
+    if np.all(constrained):
+        # Retain the established full-rank calculation path so valid forecast
+        # results do not move merely because null-space checking was added.
+        try:
+            covariance = np.linalg.inv(F)
+        except np.linalg.LinAlgError:  # defensive: eigh already found full rank
+            return np.inf
+        variance = float(coefficients @ covariance @ coefficients)
+    else:
+        projections = eigenvectors[:, constrained].T @ coefficients
+        variance = float(np.sum(projections**2 / eigenvalues[constrained]))
+    return variance if np.isfinite(variance) and variance > 0.0 else np.inf
+
 
 class Forecast:
     """style='shared_A'  : Bull et al. (2015) treatment: A shared across
@@ -40,38 +134,47 @@ class Forecast:
                            adds per-bin sigma_A^-2 in quadrature."""
 
     def __init__(self, bank: FisherBank, rf, style: str = "shared_A"):
+        if style not in FORECAST_STYLES:
+            choices = ", ".join(sorted(FORECAST_STYLES))
+            raise ValueError(f"style must be one of: {choices}")
         self.bank = bank
         self.rf = rf
         self.style = style
 
     # ------------------------------------------------------------------
-    def _marginal_cov_bin(self, F: np.ndarray):
-        """Marginalised covariance of one bin's kept parameters
-        (perbin_A style). Zero-information rows are dropped."""
+    def _marginal_fisher_bin(self, F: np.ndarray):
+        """Fisher matrix of one bin's kept parameters
+        (perbin_A style). Exactly zero-information rows are dropped.
+
+        A non-positive diagonal is not by itself evidence of zero
+        information: a negative diagonal or a zero diagonal coupled to
+        another parameter makes the Fisher matrix invalid. Keep those rows so
+        the eigenvalue check can refuse the resulting uncertainty estimate.
+        """
         names = list(self.bank.paramnames)
         keep = [i for i, n in enumerate(names) if n not in EXCLUDE_PERBIN]
         Fk = F[np.ix_(keep, keep)]
         kn = [names[i] for i in keep]
-        nz = [i for i in range(len(kn)) if Fk[i, i] > 0.0]
+        nz = np.flatnonzero(np.any(Fk != 0.0, axis=0)
+                            | np.any(Fk != 0.0, axis=1))
         Fk = Fk[np.ix_(nz, nz)]
         kn = [kn[i] for i in nz]
         Fk = 0.5 * (Fk + Fk.T)
-        try:
-            cov = np.linalg.inv(Fk)
-        except np.linalg.LinAlgError:
-            cov = np.linalg.pinv(Fk)
-        return cov, kn
+        return Fk, kn
 
     def _sigma_A_from_bin_matrix(self, F: np.ndarray) -> float:
-        cov, kn = self._marginal_cov_bin(F)
+        Fk, kn = self._marginal_fisher_bin(F)
         if "A" not in kn:
             return np.inf
-        var = cov[kn.index("A"), kn.index("A")]
-        return float(np.sqrt(var)) if var > 0 else np.inf
+        coefficients = np.zeros(len(kn))
+        coefficients[kn.index("A")] = 1.0
+        var = _variance_from_fisher(Fk, coefficients)
+        return float(np.sqrt(var)) if np.isfinite(var) else np.inf
 
     # ------------------------------------------------------------------
     def _scenario_matrices(self, scenario: Scenario, t_hours: float,
                            bins: list[int] | None = None):
+        t_hours = _nonnegative_finite_scalar(t_hours, "t_hours")
         factors = scenario.bin_factors_for_zbins(self.bank.zs)
         F_list = []
         for i, (v_frac, w_bar) in enumerate(factors):
@@ -105,12 +208,10 @@ class Forecast:
             exclude=list(EXCLUDE), expand=list(EXPAND))
         iA = names.index("A")
         Ftot = 0.5 * (Ftot + Ftot.T)
-        try:
-            cov = np.linalg.inv(Ftot)
-        except np.linalg.LinAlgError:
-            cov = np.linalg.pinv(Ftot)
-        var = cov[iA, iA]
-        return float(np.sqrt(var)) if var > 0 else np.inf
+        coefficients = np.zeros(len(names))
+        coefficients[iA] = 1.0
+        var = _variance_from_fisher(Ftot, coefficients)
+        return float(np.sqrt(var)) if np.isfinite(var) else np.inf
 
     def significance(self, scenario: Scenario, t_hours: float,
                      bins: list[int] | None = None) -> float:
@@ -120,23 +221,32 @@ class Forecast:
 
     def significance_curve(self, scenario: Scenario,
                            t_hours: np.ndarray) -> np.ndarray:
-        return np.array([self.significance(scenario, t) for t in t_hours])
+        times = np.asarray(t_hours, dtype=float)
+        if times.ndim == 0 or not np.all(np.isfinite(times)) \
+                or np.any(times < 0.0):
+            raise ValueError("t_hours must contain non-negative finite values")
+        return np.array([self.significance(scenario, t) for t in times])
 
     # ------------------------------------------------------------------
     def required_hours(self, scenario: Scenario, target: float = 5.0,
                        t_lo: float = 10.0, t_hi: float = 1e6) -> float:
         """Total on-sky hours needed for significance >= target (inf if the
         target is unreachable within t_hi hours)."""
+        target = _positive_finite_scalar(target, "target")
+        t_lo, t_hi = _time_bracket(t_lo, t_hi)
         f = lambda logt: self.significance(scenario, 10.0 ** logt) - target
-        if f(np.log10(t_hi)) < 0.0:
-            return np.inf
         if f(np.log10(t_lo)) >= 0.0:
             return t_lo
+        if f(np.log10(t_hi)) < 0.0:
+            return np.inf
+        # General first-crossing detection for nonmonotonic curves is a
+        # separate concern; brentq retains the established bracket behavior.
         logt = brentq(f, np.log10(t_lo), np.log10(t_hi), xtol=1e-4)
         return float(10.0 ** logt)
 
     def required_years(self, scenario: Scenario, target: float = 5.0,
                        duty: float = 0.75) -> float:
+        duty = _positive_finite_scalar(duty, "duty")
         h = self.required_hours(scenario, target)
         return float(survey.hours_to_years(h, duty)) if np.isfinite(h) else np.inf
 
@@ -150,6 +260,9 @@ class Forecast:
         used to validate that the in-fork noise model and the bank-rescaling
         path agree.
         """
+        t_hours = _nonnegative_finite_scalar(t_hours, "t_hours")
+        if t_hours == 0.0:
+            return np.inf
         import contextlib
         import io
 
@@ -202,33 +315,43 @@ class Forecast:
         if not F_list:
             return np.inf
         if self.style == "perbin_A":
-            cov, kn = self._marginal_cov_bin(F_list[0])
+            Fk, kn = self._marginal_fisher_bin(F_list[0])
             pname = param.rstrip("0123456789") if param not in kn else param
             if pname not in kn:
                 return np.inf
-            var = cov[kn.index(pname), kn.index(pname)]
-            return float(np.sqrt(var)) if var > 0 else np.inf
+            coefficients = np.zeros(len(kn))
+            coefficients[kn.index(pname)] = 1.0
+            var = _variance_from_fisher(Fk, coefficients)
+            return float(np.sqrt(var)) if np.isfinite(var) else np.inf
         Ftot, names = self.rf.combined_fisher_matrix(
             F_list, names=list(self.bank.paramnames),
             exclude=list(EXCLUDE), expand=list(EXPAND))
         Ftot = 0.5 * (Ftot + Ftot.T)
-        try:
-            cov = np.linalg.inv(Ftot)
-        except np.linalg.LinAlgError:
-            cov = np.linalg.pinv(Ftot)
-        var = cov[names.index(param), names.index(param)]
-        return float(np.sqrt(var)) if var > 0 else np.inf
+        coefficients = np.zeros(len(names))
+        coefficients[names.index(param)] = 1.0
+        var = _variance_from_fisher(Ftot, coefficients)
+        return float(np.sqrt(var)) if np.isfinite(var) else np.inf
 
     def required_hours_metric(self, metric_fn, threshold: float,
                               decreasing: bool = False, t_lo: float = 10.0,
                               t_hi: float = 1e6) -> float:
         """Smallest t with metric_fn(t) >= threshold (or <= if decreasing)."""
+        threshold = _finite_scalar(threshold, "threshold")
+        t_lo, t_hi = _time_bracket(t_lo, t_hi)
         sign = -1.0 if decreasing else 1.0
-        f = lambda logt: sign * (metric_fn(10.0 ** logt) - threshold)
-        if f(np.log10(t_hi)) < 0.0:
-            return np.inf
+
+        def f(logt):
+            value = float(metric_fn(10.0 ** logt))
+            if np.isnan(value):
+                raise ValueError("metric_fn must return a scalar that is not NaN")
+            return sign * (value - threshold)
+
         if f(np.log10(t_lo)) >= 0.0:
             return t_lo
+        if f(np.log10(t_hi)) < 0.0:
+            return np.inf
+        # General first-crossing detection for nonmonotonic curves is a
+        # separate concern; brentq retains the established bracket behavior.
         logt = brentq(f, np.log10(t_lo), np.log10(t_hi), xtol=1e-4)
         return float(10.0 ** logt)
 
@@ -240,13 +363,15 @@ class Forecast:
         F_list = self._scenario_matrices(scenario, t_hours, bins=[ibin])
         if not F_list:
             return np.inf
-        cov, kn = self._marginal_cov_bin(F_list[0])
+        Fk, kn = self._marginal_fisher_bin(F_list[0])
         if "aperp" not in kn or "apar" not in kn:
             return np.inf
         ip, il = kn.index("aperp"), kn.index("apar")
-        var = (4.0 / 9.0) * cov[ip, ip] + (1.0 / 9.0) * cov[il, il] \
-            + (4.0 / 9.0) * cov[ip, il]
-        return float(np.sqrt(var)) if var > 0 else np.inf
+        coefficients = np.zeros(len(kn))
+        coefficients[ip] = 2.0 / 3.0
+        coefficients[il] = 1.0 / 3.0
+        var = _variance_from_fisher(Fk, coefficients)
+        return float(np.sqrt(var)) if np.isfinite(var) else np.inf
 
     # ------------------------------------------------------------------
     def per_bin_significance(self, scenario: Scenario,
