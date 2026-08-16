@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from baonoise import api
+from baonoise import api, compat, scenarios
 
 
 class _NoForecastWork:
@@ -18,6 +18,32 @@ class _NoForecastWork:
 
     def significance(self, *args, **kwargs):
         raise AssertionError("forecast work started before validation")
+
+
+def test_default_banked_api_does_not_import_radiofisher(monkeypatch):
+    def unexpected_backend_import(_rf_dir=None):
+        raise AssertionError("the per-bin bank does not need RadioFisher")
+
+    monkeypatch.setattr(compat, "import_radiofisher", unexpected_backend_import)
+    fc = api.load()
+
+    assert fc.style == "perbin_A"
+    assert fc.rf is None
+    assert np.isfinite(fc.sigma_A(scenarios.clean(), 8_766.0))
+
+
+def test_explicit_radiofisher_path_is_still_honored(monkeypatch):
+    backend = object()
+    requested = Path("/explicit/RadioFisher")
+
+    def import_backend(rf_dir=None):
+        assert Path(rf_dir) == requested
+        return backend, requested
+
+    monkeypatch.setattr(compat, "import_radiofisher", import_backend)
+    fc = api.load(rf_dir=requested)
+    assert fc.rf is backend
+    assert fc.rf_dir == requested
 
 
 @pytest.mark.parametrize("target", [0.0, -1.0, np.nan, np.inf, True])

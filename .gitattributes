@@ -1,0 +1,3 @@
+# Keep distributed scientific inputs byte-stable across operating systems.
+src/baonoise/data/*.csv text eol=lf
+src/baonoise/data/*.npz binary

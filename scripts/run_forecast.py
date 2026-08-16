@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from baonoise import forecast, plots, scenarios, survey  # noqa: E402
 from baonoise.compat import import_radiofisher  # noqa: E402
 from baonoise.fisherbank import FisherBank  # noqa: E402
+from baonoise.resources import DEFAULT_BANK  # noqa: E402
 
 DUTY = 1.0  # on-sky years at the Overview normalization (8,760 hr)
 
@@ -32,20 +33,28 @@ def fmt_t(hours: float) -> str:
     return f"{hours:,.0f} hr ({yrs(hours):.2f} yr)"
 
 
+def _load_forecast(bank_path=DEFAULT_BANK):
+    """Load a bank, importing RadioFisher only for shared-A legacy banks."""
+    bank = FisherBank(bank_path)
+    style = ("perbin_A" if bank.meta.get("config") == "chime2022"
+             else "shared_A")
+    rf = None
+    rf_dir = None
+    if style == "shared_A":
+        rf, rf_dir = import_radiofisher()
+    fc = forecast.Forecast(bank, rf, style=style, rf_dir=rf_dir)
+    return bank, fc, style
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bank",
-                    default=str(ROOT / "data" / "fisher_bank_chime2022.npz"))
+    ap.add_argument("--bank", default=DEFAULT_BANK)
     ap.add_argument("--outdir", default=str(ROOT / "out"))
     args = ap.parse_args()
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    rf, _ = import_radiofisher()
-    bank = FisherBank(args.bank)
-    style = ("perbin_A" if bank.meta.get("config") == "chime2022"
-             else "shared_A")
-    fc = forecast.Forecast(bank, rf, style=style)
+    bank, fc, style = _load_forecast(args.bank)
     print(f"[cfg] bank config={bank.meta.get('config','bull2015')} "
           f"style={style} nbins={bank.nbins}", flush=True)
 

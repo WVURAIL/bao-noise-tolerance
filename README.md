@@ -5,12 +5,12 @@ A general framework + tool: feed it per-channel masked-time fractions, get
 back required integration time, detection significance, and the penalty
 relative to an RFI-free survey.
 
-## Quickstart (seconds; the CHIME Fisher bank ships with the repo)
+## Quickstart (seconds; the CHIME Fisher bank ships with the package)
 
 ```python
 from baonoise import api
 
-fc = api.load()                                   # CHIME bank + RadioFisher
+fc = api.load()                                   # shipped CHIME bank; no backend
 mask = {17: 0.33, 30: 0.97, 31: 0.24}             # ATSC channel -> masked frac
 api.required_time(fc, mask, target=5.0)           # survey-level 5-sigma BAO
 api.required_time(fc, mask, target=5.0, zbin=6)   # worst bin (z=1.40-1.51)
@@ -32,7 +32,7 @@ channel, the fraction of observing time an F-statistic positive excess flags
 the channel as contaminated, i.e. the fraction of data that gets masked.
 What it cannot tell you is what that masking *costs* in observing time. This
 project closes the loop: it feeds per-channel masked-time fractions into a
-[RadioFisher](https://github.com/djgormley/RadioFisher) Fisher forecast for
+[RadioFisher](https://github.com/WVURAIL/RadioFisher) Fisher forecast for
 CHIME and inverts it into a **noise-tolerance statement**: the observing time
 required to reach a target BAO detection significance, as a function of how
 much data masking removes.
@@ -85,8 +85,9 @@ the survey barely notices.
 
 The fiducial "measured" scenario uses the survey products committed in
 pilot-proxy (`data/provenance/survey_stratum_20260718/
-survey_quarterly_rates_all23.csv`, vendored under `data/`): per channel, the
-exposure-weighted mean of quarterly `hi_rate_all` (weights = `n_valid_frames`).
+survey_quarterly_rates_all23.csv`, distributed as package data): per channel,
+the exposure-weighted mean of quarterly `hi_rate_all` (weights =
+`n_valid_frames`).
 Channels 24 and 30 are *refused* there (no calibrated zero point; the
 transmitter is essentially always on); they are assigned a 97% masked
 fraction, which puts them above the excision threshold. Exposure-weighted
@@ -148,16 +149,21 @@ Figures produced in `out/`:
 ## Usage
 
 ```bash
-git clone https://github.com/djgormley/RadioFisher   # sibling checkout
 git clone https://github.com/WVURAIL/bao-noise-tolerance
 cd bao-noise-tolerance
-pip install -e ".[test]"        # numpy, scipy, matplotlib, camb, pytest
+pip install -e ".[test]"        # numpy, scipy, matplotlib, pytest
+
+# The shipped CHIME bank and masking rates work without RadioFisher.
+python examples/minimal_example.py
+python scripts/run_forecast.py          # figures + CSVs + results.md in out/
+
+# RadioFisher is needed only to build or directly verify a bank.
+git clone https://github.com/WVURAIL/RadioFisher ../RadioFisher
 
 export RADIOFISHER_DIR=../RadioFisher   # optional; sibling dir is found automatically
 
-python scripts/build_bank.py            # ~20 min on 2 cores, writes data/fisher_bank_chime.npz
+python scripts/build_bank.py --help     # choose the configuration and grid explicitly
 python scripts/verify_bank.py           # interpolation + physics sanity checks
-python scripts/run_forecast.py          # figures + CSVs + results.md in out/
 python scripts/check_paper_numbers.py   # every number in the paper regenerates from out/*.csv
 python -m pytest tests/ -q
 ```
@@ -171,7 +177,7 @@ masks change, only when the instrument/survey definition does.
 ## Where the RFI model lives
 
 The physics is implemented **inside the RadioFisher fork** (branch
-`rfi-noise-model`) as three optional experiment-dict hooks, all no-ops when
+`rfi-noise-model-chime`) as three optional experiment-dict hooks, all no-ops when
 absent: `expt['noise_freq_weight']` (a w(ν) callable, surviving time
 fraction per frequency, NaN = excised slice), `expt['noise_freq_mode']`
 (`'invvar'` or `'fourier'` band averaging), and `expt['vol_frac']`
@@ -412,6 +418,8 @@ removed. `force=True` gives the uniform policy for comparison.
 
 ```
 src/baonoise/
+  data/          installed fiducial CHIME bank and masking-rate table
+  resources.py   importlib.resources access to installed data
   compat.py      modern-stack shims + RadioFisher import
   pkcache.py     python-camb P(k) cache in RadioFisher's format
   layout.py      CHIME cylinder baseline density n(u) generator
@@ -422,7 +430,7 @@ src/baonoise/
   forecast.py    sigma(A), significance curves, required-time inversion
   plots.py       publication figures
 scripts/         build_bank / verify_bank / run_forecast / tests
-data/            P(k) cache, n(u), vendored pilot-proxy rates, Fisher bank
+data/            bank-building caches, n(u), and non-fiducial comparison banks
 out/             figures, CSVs, results.md
 ```
 

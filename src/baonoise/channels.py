@@ -27,6 +27,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .resources import DEFAULT_RATES_CSV
+
 NU_LINE = 1420.406  # MHz
 
 ATSC_CH14_LOWER_EDGE = 470.0  # MHz
@@ -36,8 +38,11 @@ ATSC_WIDTH = 6.0              # MHz
 REFUSED_CHANNELS = (24, 30)
 REFUSED_FRACTION = 0.97       # masked fraction adopted for refused channels
 
-DEFAULT_RATES_CSV = Path(__file__).resolve().parents[2] / "data" / \
-    "survey_quarterly_rates_all23.csv"
+
+def _source_name(source) -> str:
+    """Display name for a path or package resource."""
+    name = getattr(source, "name", None)
+    return str(name) if name is not None else Path(source).name
 
 
 def channel_edges(ch: int) -> tuple[float, float]:
@@ -62,7 +67,10 @@ def measured_mask_fractions(rates_csv: str | Path = DEFAULT_RATES_CSV,
     """
     num = defaultdict(float)
     den = defaultdict(float)
-    with open(rates_csv) as fh:
+    opener = getattr(rates_csv, "open", None)
+    fh = (opener("r", encoding="utf-8", newline="") if opener is not None
+          else open(rates_csv, encoding="utf-8", newline=""))
+    with fh:
         for row in csv.DictReader(fh):
             ch = int(row["atsc_channel"])
             n = float(row["n_valid_frames"])
@@ -211,7 +219,7 @@ def measured_mask_table(rates_csv: str | Path = DEFAULT_RATES_CSV,
     fr = measured_mask_fractions(rates_csv, refused_fraction, rate_col)
     return MaskTable(
         fractions=fr, source="csv", rule="unrecorded",
-        notes=[f"column {rate_col!r} in {Path(rates_csv).name} records no "
+        notes=[f"column {rate_col!r} in {_source_name(rates_csv)} records no "
                f"statistic or threshold; the detector behind it is unverified"])
 
 

@@ -30,6 +30,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from baonoise import residual as R          # noqa: E402
 from baonoise import forecast, scenarios    # noqa: E402
 from baonoise.fisherbank import FisherBank  # noqa: E402
+from baonoise.resources import DEFAULT_BANK  # noqa: E402
 
 TAU_GRID = np.array([
     R.CHIME_FRAME_SECONDS, 1.0, 10.0, 60.0, 300.0, 900.0, 3600.0,
@@ -58,7 +59,7 @@ def main() -> int:
                     help="fix the intra-day correlation time [s] instead of "
                          "sweeping (default: sweep)")
     ap.add_argument("--bank", type=Path,
-                    default=ROOT / "data" / "fisher_bank_chime2022.npz")
+                    default=DEFAULT_BANK)
     ap.add_argument("--target", type=float, default=5.0)
     ap.add_argument("--zbin", type=int, default=None)
     ap.add_argument("--plot", action="store_true")

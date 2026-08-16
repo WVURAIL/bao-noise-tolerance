@@ -41,6 +41,7 @@ from matplotlib.lines import Line2D                  # noqa: E402
 from baonoise import residual as R                   # noqa: E402
 from baonoise import forecast, scenarios             # noqa: E402
 from baonoise.fisherbank import FisherBank           # noqa: E402
+from baonoise.resources import DEFAULT_BANK          # noqa: E402
 
 # Validated categorical slots 1-3 (all-pairs, light surface):
 #   node scripts/validate_palette.js "#2a78d6,#eb6834,#1baf7a" --pairs all
@@ -115,7 +116,7 @@ def main() -> int:
     ap.add_argument("--delay", default=R.DEFAULT_DELAY_KEY,
                     choices=sorted(R.DELAY_SUPPRESSION_DB))
     ap.add_argument("--bank", type=Path,
-                    default=ROOT / "data" / "fisher_bank_chime2022.npz")
+                    default=DEFAULT_BANK)
     ap.add_argument("--out", type=Path, default=ROOT / "out")
     args = ap.parse_args()
     offs = {int(k): v for k, v in (o.split("=") for o in args.off)}

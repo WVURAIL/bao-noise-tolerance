@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from baonoise import channels as chn        # noqa: E402
+from baonoise.resources import DEFAULT_BANK  # noqa: E402
 
 
 def main() -> int:
@@ -39,7 +40,7 @@ def main() -> int:
     ap.add_argument("--forecast", action="store_true",
                     help="also price both tables through the Fisher bank")
     ap.add_argument("--bank", type=Path,
-                    default=ROOT / "data" / "fisher_bank_chime2022.npz")
+                    default=DEFAULT_BANK)
     args = ap.parse_args()
 
     kw = {} if args.rates_csv is None else {"rates_csv": args.rates_csv}

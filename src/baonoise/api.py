@@ -1,10 +1,10 @@
 """High-level one-call API: the entry point for users of the tool.
 
-Minimal usage (with the CHIME Fisher bank shipped in the repository):
+Minimal usage (with the CHIME Fisher bank shipped in the package):
 
     from baonoise import api
 
-    fc = api.load()                              # CHIME bank, RadioFisher fork
+    fc = api.load()                              # shipped CHIME bank; no backend
     mask = {17: 0.33, 30: 0.97, 31: 0.24}        # ATSC channel -> masked frac
     print(api.required_time(fc, mask))           # hours/years/penalty to 5sigma
 
@@ -22,14 +22,8 @@ import numpy as np
 from . import forecast as _forecast
 from . import scenarios as _scenarios
 from . import survey as _survey
-from .compat import import_radiofisher
 from .fisherbank import FisherBank
-
-_DATA = Path(__file__).resolve().parents[2] / "data"
-# Prefer the CHIME Overview (Amiri et al. 2022, Appendix A) configuration;
-# fall back to the Bull et al. (2015) design bank.
-_C22 = _DATA / "fisher_bank_chime2022.npz"
-DEFAULT_BANK = _C22 if _C22.exists() else _DATA / "fisher_bank_chime.npz"
+from .resources import DEFAULT_BANK
 
 
 def _finite_scalar(value, name: str) -> float:
@@ -60,11 +54,17 @@ def load(bank: str | Path = DEFAULT_BANK, rf_dir=None) -> _forecast.Forecast:
     """Load a Fisher bank and return a Forecast ready for scenario queries.
     The marginalisation style follows the bank's config: per-bin BAO
     amplitudes (Amiri et al. 2022 Appendix A) for 'chime2022', shared
-    amplitude (Bull et al. 2015) otherwise."""
-    rf, _ = import_radiofisher(rf_dir)
+    amplitude (Bull et al. 2015) otherwise. With ``rf_dir=None``, the per-bin
+    path does not import RadioFisher. Passing ``rf_dir`` explicitly loads and
+    retains that backend for subsequent direct evaluations."""
     b = FisherBank(bank)
     style = "perbin_A" if b.meta.get("config") == "chime2022" else "shared_A"
-    return _forecast.Forecast(b, rf, style=style)
+    rf = None
+    resolved_rf_dir = None
+    if style == "shared_A" or rf_dir is not None:
+        from .compat import import_radiofisher
+        rf, resolved_rf_dir = import_radiofisher(rf_dir)
+    return _forecast.Forecast(b, rf, style=style, rf_dir=resolved_rf_dir)
 
 
 def scenario_from(mask=None, uniform=None, band: str = "dtv",

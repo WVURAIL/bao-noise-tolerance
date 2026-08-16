@@ -131,14 +131,26 @@ class Forecast:
                            bins, {b_HI,f,aperp,apar} expanded per bin.
        style='perbin_A'  : Amiri et al. (2022) Appendix A: each bin
                            independent with per-bin A; survey significance
-                           adds per-bin sigma_A^-2 in quadrature."""
+                           adds per-bin sigma_A^-2 in quadrature.
 
-    def __init__(self, bank: FisherBank, rf, style: str = "shared_A"):
+       Banked ``perbin_A`` calculations do not need a RadioFisher backend,
+       so ``rf`` may be omitted. ``shared_A`` requires the backend at
+       construction; direct Fisher evaluation imports it lazily when needed.
+    """
+
+    def __init__(self, bank: FisherBank, rf=None, style: str = "shared_A",
+                 rf_dir=None):
         if style not in FORECAST_STYLES:
             choices = ", ".join(sorted(FORECAST_STYLES))
             raise ValueError(f"style must be one of: {choices}")
+        if style == "shared_A" and rf is None:
+            raise RuntimeError(
+                "shared_A forecasts require a RadioFisher backend; pass the "
+                "imported radiofisher module as rf"
+            )
         self.bank = bank
         self.rf = rf
+        self.rf_dir = rf_dir
         self.style = style
 
     # ------------------------------------------------------------------
@@ -267,10 +279,20 @@ class Forecast:
         import io
 
         from . import pkcache, survey
-        from .compat import find_radiofisher_dir
+        from .compat import find_radiofisher_dir, import_radiofisher
 
         rf = self.rf
-        rf_dir = find_radiofisher_dir(rf_dir)
+        requested_rf_dir = rf_dir if rf_dir is not None else self.rf_dir
+        if rf is None:
+            try:
+                rf, rf_dir = import_radiofisher(requested_rf_dir)
+            except FileNotFoundError as exc:
+                raise RuntimeError(
+                    "direct Fisher evaluation requires a RadioFisher "
+                    "checkout; set RADIOFISHER_DIR or pass rf_dir"
+                ) from exc
+        else:
+            rf_dir = find_radiofisher_dir(requested_rf_dir)
         cfg = self.bank.meta.get("config", "bull2015")
         if cosmo is None or cosmo_fns is None:
             from pathlib import Path

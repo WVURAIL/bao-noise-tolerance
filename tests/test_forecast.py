@@ -52,6 +52,47 @@ def test_invalid_marginalisation_style_is_rejected():
         _forecast(np.eye(2), style="legacy")
 
 
+def test_perbin_forecast_does_not_require_radiofisher_backend():
+    fc = Forecast(_Bank([[4.0, 0.0], [0.0, 1.0]], ["A", "sigma_NL"]),
+                  style="perbin_A")
+    assert fc.rf is None
+    assert fc.sigma_A(SCENARIO, 1.0) == pytest.approx(0.5)
+
+
+def test_shared_forecast_requires_radiofisher_backend():
+    bank = _Bank(np.eye(2), ["A", "sigma_NL"])
+    with pytest.raises(RuntimeError, match="shared_A.*RadioFisher"):
+        Forecast(bank, style="shared_A")
+
+
+def test_direct_forecast_reports_missing_radiofisher_clearly(monkeypatch):
+    fc = Forecast(_Bank(np.eye(2), ["A", "sigma_NL"]), style="perbin_A")
+
+    def missing_backend(_rf_dir=None):
+        raise FileNotFoundError("not installed")
+
+    monkeypatch.setattr("baonoise.compat.import_radiofisher", missing_backend)
+    with pytest.raises(RuntimeError, match="direct Fisher.*RadioFisher"):
+        fc.sigma_A_direct(SCENARIO, 1.0)
+
+
+def test_direct_forecast_reuses_stored_radiofisher_path(monkeypatch):
+    class LookupObserved(Exception):
+        pass
+
+    requested = Path("/nonstandard/RadioFisher")
+    fc = Forecast(_Bank(np.eye(2), ["A", "sigma_NL"]), object(),
+                  style="perbin_A", rf_dir=requested)
+
+    def observe_lookup(explicit=None):
+        assert Path(explicit) == requested
+        raise LookupObserved
+
+    monkeypatch.setattr("baonoise.compat.find_radiofisher_dir", observe_lookup)
+    with pytest.raises(LookupObserved):
+        fc.sigma_A_direct(SCENARIO, 1.0)
+
+
 @pytest.mark.parametrize("style", ["perbin_A", "shared_A"])
 def test_degenerate_amplitude_is_unconstrained_not_pseudoinverse_finite(style):
     """A and its nuisance are identical, so A has no marginal constraint."""

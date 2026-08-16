@@ -8,6 +8,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from baonoise.fisherbank import build_bank  # noqa: E402
+from baonoise.resources import DEFAULT_BANK_NAME  # noqa: E402
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -58,8 +59,16 @@ if __name__ == "__main__":
     default_name = (f"fisher_bank_chime2022{ctag}{ptag}{ktag}.npz"
                     if args.config == "chime2022"
                     else f"fisher_bank_chime{ptag}{ktag}.npz")
-    out = args.out or (Path(__file__).resolve().parents[1] / "data" /
-                       default_name)
+    if args.out:
+        out = args.out
+    elif default_name == DEFAULT_BANK_NAME:
+        # A plain CHIME-2022 output belongs at the single package-data
+        # location that wheels and sdists distribute. The caller remains
+        # responsible for choosing the intended grid and scientific settings.
+        out = (Path(__file__).resolve().parents[1] / "src" / "baonoise" /
+               "data" / default_name)
+    else:
+        out = Path(__file__).resolve().parents[1] / "data" / default_name
     tgrid = np.logspace(np.log10(args.tmin), np.log10(args.tmax), args.nt)
     if args.dense_knee:
         lo, hi = args.knee_range

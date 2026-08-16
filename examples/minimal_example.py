@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Minimal baonoise example: from a masking table to observing-time cost.
 
-Requires a RadioFisher checkout (sibling directory or RADIOFISHER_DIR) and
-the CHIME Fisher bank shipped in data/. Runs in seconds -- no bank build.
+Uses the CHIME Fisher bank and quarterly rates shipped inside the package.
+Runs in seconds without a RadioFisher checkout or a bank build.
 """
 import sys
 from pathlib import Path
@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from baonoise import api
 
-fc = api.load()  # CHIME bank shipped with the repository
+fc = api.load()  # shipped CHIME bank; RadioFisher is not required
 
 # Your masking measurements: ATSC channel -> fraction of time masked.
 # Channels above the excision threshold (default 0.5) are excised
@@ -24,7 +24,7 @@ print(api.required_time(fc, mask, target=5.0))
 # The worst-affected redshift bin alone (bin 6: z = 1.40-1.51)
 print(api.required_time(fc, mask, target=5.0, zbin=6))
 
-# Significance after 2 calendar years (75% duty)
+# Significance after 2 on-sky years at the Overview normalization
 print(f"S(2 yr) = {api.significance(fc, 2.0, mask):.1f} sigma")
 
 # Noise-tolerance curve: years to 5 sigma vs uniform DTV-band masking

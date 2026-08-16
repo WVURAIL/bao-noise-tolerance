@@ -36,9 +36,10 @@ sys.path.insert(0, str(ROOT / "src"))
 from baonoise import forecast, pkcache, scenarios, survey  # noqa: E402
 from baonoise.compat import import_radiofisher  # noqa: E402
 from baonoise.fisherbank import FisherBank  # noqa: E402
+from baonoise.resources import DEFAULT_BANK  # noqa: E402
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--bank", default=str(ROOT / "data" / "fisher_bank_chime2022.npz"))
+ap.add_argument("--bank", default=DEFAULT_BANK)
 args = ap.parse_args()
 
 rf, rf_dir = import_radiofisher()

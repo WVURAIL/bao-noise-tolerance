@@ -225,13 +225,19 @@ class FisherBank:
     """Loads a bank file and interpolates F(z_bin, ttot) in log time."""
 
     def __init__(self, path: str | Path):
-        dat = np.load(path, allow_pickle=False)
-        self.F_grid = dat["F"]
-        self.t_grid = dat["t_grid"]
-        self.zs = dat["zs"]
-        self.zc = dat["zc"]
-        self.paramnames = [str(p) for p in dat["paramnames"]]
-        self.meta = json.loads(str(dat["meta"]))
+        # ``importlib.resources`` can return an archive-backed Traversable,
+        # not an OS path. Read through its public ``open`` interface and copy
+        # every array while the NPZ is open; Forecast retains no file handle.
+        opener = getattr(path, "open", None)
+        stream = (opener("rb") if opener is not None
+                  else contextlib.nullcontext(path))
+        with stream as source, np.load(source, allow_pickle=False) as dat:
+            self.F_grid = np.array(dat["F"], copy=True)
+            self.t_grid = np.array(dat["t_grid"], copy=True)
+            self.zs = np.array(dat["zs"], copy=True)
+            self.zc = np.array(dat["zc"], copy=True)
+            self.paramnames = [str(p) for p in dat["paramnames"]]
+            self.meta = json.loads(str(dat["meta"]))
         self._logt = np.log10(self.t_grid)
         nbins, nt, npar, _ = self.F_grid.shape
         # Interpolate the shape function G(t) = F(t)/t^2: exactly constant in
