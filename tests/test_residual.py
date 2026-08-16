@@ -38,8 +38,11 @@ def test_absent_residuals_reproduce_masking_only():
 
 
 def test_zero_residual_is_exactly_identity():
-    a = scenarios.Scenario("a", "a", fractions={30: 0.2}, excise_threshold=1.01)
-    b = scenarios.Scenario("b", "b", fractions={30: 0.2}, excise_threshold=1.01,
+    no_excision = scenarios.NO_EXCISION_THRESHOLD
+    a = scenarios.Scenario("a", "a", fractions={30: 0.2},
+                           excise_threshold=no_excision)
+    b = scenarios.Scenario("b", "b", fractions={30: 0.2},
+                           excise_threshold=no_excision,
                            residuals={30: 0.0})
     assert a.bin_factors(566.0, 592.0) == b.bin_factors(566.0, 592.0)
     assert a.keep_weight(30) == pytest.approx(0.8)
@@ -57,7 +60,8 @@ def test_uniform_constructor_defaults_to_no_residual():
 def test_residual_acts_as_effective_time_loss():
     """r raises noise by (1 + r), i.e. costs time by the same factor."""
     sc = scenarios.Scenario("t", "t", fractions={30: 0.0},
-                            residuals={30: 1.0}, excise_threshold=1.01)
+                            residuals={30: 1.0},
+                            excise_threshold=scenarios.NO_EXCISION_THRESHOLD)
     assert sc.keep_weight(30) == pytest.approx(0.5)
     # a bin entirely inside ch30
     _, w = sc.bin_factors(567.0, 571.0)
@@ -66,14 +70,15 @@ def test_residual_acts_as_effective_time_loss():
 
 def test_residual_and_masking_multiply():
     sc = scenarios.Scenario("t", "t", fractions={30: 0.5},
-                            residuals={30: 0.25}, excise_threshold=1.01)
+                            residuals={30: 0.25},
+                            excise_threshold=scenarios.NO_EXCISION_THRESHOLD)
     assert sc.keep_weight(30) == pytest.approx(0.5 / 1.25)
 
 
 def test_negative_residual_is_rejected():
-    sc = scenarios.Scenario("t", "t", fractions={30: 0.1}, residuals={30: -0.1})
     with pytest.raises(ValueError):
-        sc.keep_weight(30)
+        scenarios.Scenario(
+            "t", "t", fractions={30: 0.1}, residuals={30: -0.1})
 
 
 def test_residual_can_force_excision():
@@ -90,14 +95,15 @@ def test_residual_can_force_excision():
 def test_residual_only_channel_is_seen():
     """A channel listed only in residuals still enters the band average."""
     sc = scenarios.Scenario("t", "t", residuals={30: 1.0},
-                            excise_threshold=1.01)
+                            excise_threshold=scenarios.NO_EXCISION_THRESHOLD)
     _, w = sc.bin_factors(567.0, 571.0)
     assert w == pytest.approx(0.5)
 
 
 def test_fourier_mode_folds_residual_too():
     sc = scenarios.Scenario("t", "t", fractions={30: 0.5}, residuals={30: 1.0},
-                            excise_threshold=1.01, mode="fourier")
+                            excise_threshold=scenarios.NO_EXCISION_THRESHOLD,
+                            mode="fourier")
     width, ov = 592.0 - 566.0, 6.0
     _, w = sc.bin_factors(566.0, 592.0)
     expected = width / ((width - ov) + ov / 0.25)
@@ -487,13 +493,15 @@ def test_selective_scenario_keeps_declined_channels_contaminated(tmp_path):
     """A channel the mask declines must carry its full contamination."""
     yes = residual.mask_benefit(35, f=0.5, r_unmasked=20.0, r_masked=1.0)
     no = residual.mask_benefit(34, f=0.99, r_unmasked=0.01, r_masked=0.005)
-    sc = scenarios.from_mask_decisions([yes, no], excise_threshold=1.01)
+    sc = scenarios.from_mask_decisions(
+        [yes, no], excise_threshold=scenarios.NO_EXCISION_THRESHOLD)
     assert sc.fractions[35] == pytest.approx(0.5)
     assert sc.residuals[35] == pytest.approx(1.0)
     assert sc.fractions[34] == 0.0                  # not masked
     assert sc.residuals[34] == pytest.approx(0.01)  # but still contaminated
-    forced = scenarios.from_mask_decisions([yes, no], excise_threshold=1.01,
-                                           force=True)
+    forced = scenarios.from_mask_decisions(
+        [yes, no], excise_threshold=scenarios.NO_EXCISION_THRESHOLD,
+        force=True)
     assert forced.fractions[34] == pytest.approx(0.99)
     assert forced.keep_weight(34) < sc.keep_weight(34)   # forcing costs time
 

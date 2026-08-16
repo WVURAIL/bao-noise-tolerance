@@ -52,7 +52,7 @@ def test_excision_costs_volume_not_noise():
 
 def test_kept_channel_costs_time():
     sc = scenarios.Scenario("t", "t", fractions={30: 0.97},
-                            excise_threshold=1.01)   # never excise
+                            excise_threshold=scenarios.NO_EXCISION_THRESHOLD)
     width = 591.4 - 566.6
     ov = 572.0 - 566.6
     v, w = sc.bin_factors(566.6, 591.4)
@@ -61,7 +61,8 @@ def test_kept_channel_costs_time():
     assert w == pytest.approx(expected)
     # fourier convention is much harsher
     sc_f = scenarios.Scenario("t", "t", fractions={30: 0.97},
-                              excise_threshold=1.01, mode="fourier")
+                              excise_threshold=scenarios.NO_EXCISION_THRESHOLD,
+                              mode="fourier")
     _, wf = sc_f.bin_factors(566.6, 591.4)
     assert wf == pytest.approx(width / ((width - ov) + ov / 0.03))
     assert wf < 0.2
@@ -120,9 +121,110 @@ def test_api_scenario_from():
     v, w = sc.bin_factors(566.6, 591.4)
     assert v < 1.0 and w == 1.0      # ch30 excised, ch17 outside this bin
     sc2 = api.scenario_from(uniform=0.5)
+    assert sc2.excise_threshold == scenarios.NO_EXCISION_THRESHOLD
     assert sc2.bin_factors(500.0, 530.0)[1] == pytest.approx(0.5)
+    # An explicit threshold is applied rather than silently ignored.
+    sc3 = api.scenario_from(uniform=0.5, excise_threshold=0.5)
+    assert sc3.bin_factors(500.0, 530.0) == pytest.approx((0.0, 1.0))
     with pytest.raises(ValueError):
         api.scenario_from()
+
+
+@pytest.mark.parametrize("fractions", [
+    {30: -0.01}, {30: 1.01}, {30: np.nan}, {30: np.inf},
+])
+def test_scenario_rejects_invalid_masked_fractions(fractions):
+    with pytest.raises(ValueError, match=r"fractions\[30\].*\[0, 1\]"):
+        scenarios.Scenario("bad", "bad", fractions=fractions)
+
+
+@pytest.mark.parametrize("residuals", [
+    {30: -0.01}, {30: np.nan}, {30: np.inf},
+])
+def test_scenario_rejects_invalid_residuals(residuals):
+    with pytest.raises(ValueError, match=r"residuals\[30\].*non-negative"):
+        scenarios.Scenario("bad", "bad", residuals=residuals)
+
+
+@pytest.mark.parametrize("mode", ["invvar", "Time", "", None, []])
+def test_scenario_rejects_unknown_modes(mode):
+    with pytest.raises(ValueError, match="mode must be one of"):
+        scenarios.Scenario("bad", "bad", mode=mode)
+
+
+@pytest.mark.parametrize("threshold", [-0.01, np.nan, -np.inf])
+def test_scenario_rejects_invalid_mask_excision_thresholds(threshold):
+    with pytest.raises(ValueError, match="excise_threshold"):
+        scenarios.Scenario("bad", "bad", excise_threshold=threshold)
+
+
+def test_threshold_above_one_compatibly_disables_excision():
+    """Existing callers using the old 1.01 idiom retain their behavior."""
+    sc = scenarios.Scenario(
+        "kept", "kept", fractions={30: 1.0}, excise_threshold=1.01)
+    assert not sc.is_excised(30)
+    assert sc.excise_threshold == pytest.approx(1.01)
+
+
+@pytest.mark.parametrize("threshold", [-0.01, np.nan, -np.inf])
+def test_scenario_rejects_invalid_residual_excision_thresholds(threshold):
+    with pytest.raises(ValueError, match="residual_excise_threshold"):
+        scenarios.Scenario(
+            "bad", "bad", residual_excise_threshold=threshold)
+
+
+def test_scenario_copies_and_normalises_inputs():
+    fractions = {np.int64(30): np.float64(0.25)}
+    residuals = {np.int64(30): np.float64(0.5)}
+    sc = scenarios.Scenario(
+        "ok", "ok", fractions=fractions, residuals=residuals)
+    fractions[30] = 0.75
+    residuals[30] = 1.0
+    assert sc.fractions == {30: 0.25}
+    assert sc.residuals == {30: 0.5}
+
+
+def test_api_uniform_residual_mapping_is_validated_at_construction():
+    from baonoise import api
+
+    with pytest.raises(ValueError, match=r"residuals\[30\]"):
+        api.scenario_from(uniform=0.2, residuals={30: np.nan})
+
+
+@pytest.mark.parametrize("residual", [-0.1, np.nan, np.inf, True])
+def test_api_rejects_invalid_uniform_residual(residual):
+    from baonoise import api
+
+    with pytest.raises(ValueError, match="residual"):
+        api.scenario_from(uniform=0.2, residual=residual)
+
+
+def test_uniform_excision_policies_are_explicit():
+    kept = scenarios.uniform(0.8)
+    thresholded = scenarios.uniform(0.8, excise_threshold=0.5)
+    forced = scenarios.uniform(0.8, excise=True)
+    assert not kept.is_excised(30)
+    assert thresholded.is_excised(30)
+    assert forced.is_excised(30)
+    with pytest.raises(ValueError, match="either excise=True"):
+        scenarios.uniform(0.8, excise=True, excise_threshold=0.5)
+
+
+def test_uniform_label_reflects_residual_excision_policy():
+    sc = scenarios.uniform(
+        0.2, residual=2.0, residual_excise_threshold=1.0)
+    assert sc.is_excised(30)
+    assert "excised" in sc.label
+    assert "r=2" in sc.label
+
+
+def test_uniform_label_is_neutral_for_channel_dependent_residuals():
+    sc = scenarios.uniform(
+        0.2, residuals={30: 2.0}, residual_excise_threshold=1.0)
+    assert sc.is_excised(30)
+    assert not sc.is_excised(29)
+    assert sc.label == (
+        "20% uniform masked fraction, dtv band; channel-dependent residuals")
 
 
 # ----------------------------------------------------------------------

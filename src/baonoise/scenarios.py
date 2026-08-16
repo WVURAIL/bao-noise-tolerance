@@ -7,8 +7,8 @@ RFI masking removes time-frequency samples. For a frequency slice with masked
 fraction f, the effective integration time is t_eff = ttot * (1 - f), so its
 thermal noise power grows by 1/(1-f).
 
-Channels masked more than ``excise_threshold`` are treated as *excised*: the
-slice is dropped from the analysis entirely. That costs survey volume
+Channels masked at or above ``excise_threshold`` are treated as *excised*:
+the slice is dropped from the analysis entirely. That costs survey volume
 (Fisher information scales linearly with the excised bandwidth fraction) but
 does not degrade the noise of the surviving band. This mirrors real practice:
 a 97%-masked channel (e.g. ATSC 30) is cut rather than integrated 33x longer.
@@ -48,15 +48,84 @@ rather than assumed.
 Treating a residual as excess *variance* is the conservative reading only if
 the residual is incoherent; a coherent residual is a *bias*, and a bias is not
 bounded by this construction. ``residual_excise_threshold`` exists for that
-case: a slice whose r exceeds it is dropped rather than integrated through.
+case: a slice whose r reaches it is dropped rather than integrated through.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from numbers import Integral, Real
 
 import numpy as np
 
 from . import channels as chn
+
+
+DEFAULT_EXCISE_THRESHOLD = 0.5
+NO_EXCISION_THRESHOLD = np.inf
+MODES = frozenset({"time", "fourier"})
+
+
+def _as_real(value, field_name: str) -> float:
+    """Return *value* as a scalar float, with a useful validation error."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
+        raise ValueError(f"{field_name} must be a real scalar, got {value!r}")
+    return float(value)
+
+
+def _fraction(value, field_name: str) -> float:
+    value = _as_real(value, field_name)
+    if not np.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError(f"{field_name} must be finite and in [0, 1], got {value!r}")
+    return value
+
+
+def _residual(value, field_name: str) -> float:
+    value = _as_real(value, field_name)
+    if not np.isfinite(value) or value < 0.0:
+        raise ValueError(f"{field_name} must be finite and non-negative, got {value!r}")
+    return value
+
+
+def _channel_values(values, value_validator, field_name: str) -> dict[int, float]:
+    """Validate and copy a channel-to-value mapping."""
+    try:
+        items = values.items()
+    except AttributeError as exc:
+        raise ValueError(f"{field_name} must be a channel-to-value mapping") from exc
+
+    out = {}
+    for channel, value in items:
+        if (isinstance(channel, (bool, np.bool_))
+                or not isinstance(channel, Integral)):
+            raise ValueError(
+                f"{field_name} channel keys must be integers, got {channel!r}")
+        normalized_channel = int(channel)
+        out[normalized_channel] = value_validator(
+            value, f"{field_name}[{normalized_channel}]")
+    return out
+
+
+def _fraction_threshold(value, field_name: str) -> float:
+    """Validate a threshold; values above one cannot excise a fraction."""
+    value = _as_real(value, field_name)
+    if np.isposinf(value):
+        return value
+    if not np.isfinite(value) or value < 0.0:
+        raise ValueError(
+            f"{field_name} must be a non-negative finite value or +inf, "
+            f"got {value!r}")
+    return value
+
+
+def _residual_threshold(value, field_name: str) -> float:
+    """Validate a non-negative residual threshold; +inf disables it."""
+    value = _as_real(value, field_name)
+    if np.isposinf(value):
+        return value
+    if not np.isfinite(value) or value < 0.0:
+        raise ValueError(
+            f"{field_name} must be non-negative or +inf, got {value!r}")
+    return value
 
 
 def _overlap(a_lo: float, a_hi: float, b_lo: float, b_hi: float) -> float:
@@ -69,18 +138,28 @@ class Scenario:
     name: str
     label: str
     fractions: dict[int, float] = field(default_factory=dict)  # ch -> f_masked
-    excise_threshold: float = 0.5
+    excise_threshold: float = DEFAULT_EXCISE_THRESHOLD
     mode: str = "time"           # 'time' or 'fourier'
     residuals: dict[int, float] = field(default_factory=dict)  # ch -> r
-    residual_excise_threshold: float = np.inf
+    residual_excise_threshold: float = NO_EXCISION_THRESHOLD
+
+    def __post_init__(self) -> None:
+        """Normalise inputs and reject non-physical scenarios immediately."""
+        if not isinstance(self.mode, str) or self.mode not in MODES:
+            raise ValueError(
+                f"mode must be one of {sorted(MODES)}, got {self.mode!r}")
+        self.fractions = _channel_values(self.fractions, _fraction, "fractions")
+        self.residuals = _channel_values(self.residuals, _residual, "residuals")
+        self.excise_threshold = _fraction_threshold(
+            self.excise_threshold, "excise_threshold")
+        self.residual_excise_threshold = _residual_threshold(
+            self.residual_excise_threshold, "residual_excise_threshold")
 
     # ------------------------------------------------------------------
     def keep_weight(self, ch: int) -> float:
         """Surviving-time weight of a kept channel: (1 - f) / (1 + r)."""
         f = self.fractions.get(ch, 0.0)
         r = self.residuals.get(ch, 0.0)
-        if r < 0.0:
-            raise ValueError(f"residual for channel {ch} is negative: {r}")
         return (1.0 - f) / (1.0 + r)
 
     def is_excised(self, ch: int) -> bool:
@@ -160,7 +239,7 @@ class Scenario:
         def w_of_nu(nu):
             nu = np.atleast_1d(np.asarray(nu, dtype=float))
             out = np.ones_like(nu)
-            for (lo, hi), w in zip(edges, values):
+            for (lo, hi), w in zip(edges, values, strict=True):
                 sel = (nu >= lo) & (nu < hi)
                 out[sel] = w
             return out
@@ -181,9 +260,10 @@ def clean() -> Scenario:
 
 
 def measured(rates_csv=None, refused_fraction: float = chn.REFUSED_FRACTION,
-             excise_threshold: float = 0.5, mode: str = "time",
+             excise_threshold: float = DEFAULT_EXCISE_THRESHOLD,
+             mode: str = "time",
              residuals: dict[int, float] | None = None,
-             residual_excise_threshold: float = np.inf,
+             residual_excise_threshold: float = NO_EXCISION_THRESHOLD,
              products=None, fill_missing: str = "error") -> Scenario:
     """Fiducial: pilot-proxy exposure-weighted rates; refused ch24/30 excised.
 
@@ -247,28 +327,67 @@ def band_channels(band: str = "dtv") -> list[int]:
 
 
 def uniform(f: float, band: str = "dtv", excise: bool = False,
-            mode: str = "time", residual: float = 0.0) -> Scenario:
+            mode: str = "time", residual: float = 0.0,
+            excise_threshold: float | None = None,
+            residuals: dict[int, float] | None = None,
+            residual_excise_threshold: float = NO_EXCISION_THRESHOLD) -> Scenario:
     """Uniform masked fraction f across a band.
 
     band='dtv'  : ATSC channels 14-36 (470-608 MHz), the pilot-proxy survey band
     band='all'  : the entire CHIME band, approximated by ATSC-width slices
                   from 400-800 MHz (channels -2..68 in extended numbering)
     residual    : uniform residual-to-thermal ratio r left in the kept data
+
+    Uniform scenarios are retained-time stress tests by default, even when
+    ``f`` exceeds the measured-scenario excision threshold. Pass
+    ``excise_threshold=...`` to apply a threshold, or ``excise=True`` to
+    excise the whole uniformly affected band. The latter is retained for
+    compatibility and is mutually exclusive with an explicit threshold.
+    Since fractions are bounded by one, any threshold above one also disables
+    excision; prefer ``NO_EXCISION_THRESHOLD`` when expressing that policy in
+    new code.
     """
+    f = _fraction(f, "uniform masked fraction")
+    residual = _residual(residual, "uniform residual")
+    if not isinstance(excise, (bool, np.bool_)):
+        raise ValueError(f"excise must be a boolean, got {excise!r}")
+    if excise and excise_threshold is not None:
+        raise ValueError("provide either excise=True or excise_threshold=, not both")
+    if residuals is not None and residual != 0.0:
+        raise ValueError("provide at most one of residuals= or residual=")
+
     chans = band_channels(band)
-    tag = "excised" if excise else "masked"
-    res = {c: float(residual) for c in chans} if residual else {}
-    rtag = f", r={residual:g}" if residual else ""
-    return Scenario(f"uniform{int(round(100 * f))}_{band}",
-                    f"{100 * f:.0f}% {tag}, {band} band{rtag}",
-                    fractions={c: f for c in chans},
-                    excise_threshold=(f if excise else 1.01), mode=mode,
-                    residuals=res)
+    threshold = (f if excise else NO_EXCISION_THRESHOLD)
+    if excise_threshold is not None:
+        threshold = excise_threshold
+    threshold = _fraction_threshold(threshold, "excise_threshold")
+    res = (dict(residuals) if residuals is not None
+           else ({c: residual for c in chans} if residual else {}))
+    scenario = Scenario(
+        f"uniform{int(round(100 * f))}_{band}", "uniform scenario",
+        fractions={c: f for c in chans}, excise_threshold=threshold,
+        mode=mode, residuals=res,
+        residual_excise_threshold=residual_excise_threshold)
+
+    # Build the descriptive label only after Scenario has validated both
+    # policies. A residual threshold can excise an otherwise retained mask.
+    # A channel-dependent residual mapping can produce mixed dispositions, so
+    # its label deliberately reports inputs rather than claiming one outcome.
+    if residuals is not None:
+        scenario.label = (
+            f"{100 * f:.0f}% uniform masked fraction, {band} band; "
+            "channel-dependent residuals")
+    else:
+        tag = "excised" if scenario.is_excised(chans[0]) else "masked"
+        rtag = f", r={residual:g}" if residual else ""
+        scenario.label = f"{100 * f:.0f}% {tag}, {band} band{rtag}"
+    return scenario
 
 
 def at_threshold(per_channel: dict[int, tuple[float, float]],
-                 eta: float | None = None, excise_threshold: float = 0.5,
-                 residual_excise_threshold: float = np.inf,
+                 eta: float | None = None,
+                 excise_threshold: float = DEFAULT_EXCISE_THRESHOLD,
+                 residual_excise_threshold: float = NO_EXCISION_THRESHOLD,
                  mode: str = "time") -> Scenario:
     """Scenario from a detector operating point: ``{channel: (f, r)}``.
 
@@ -289,8 +408,9 @@ def at_threshold(per_channel: dict[int, tuple[float, float]],
                     mode=mode)
 
 
-def from_mask_decisions(decisions, excise_threshold: float = 0.5,
-                        residual_excise_threshold: float = np.inf,
+def from_mask_decisions(decisions,
+                        excise_threshold: float = DEFAULT_EXCISE_THRESHOLD,
+                        residual_excise_threshold: float = NO_EXCISION_THRESHOLD,
                         mode: str = "time", force: bool = False) -> Scenario:
     """Apply the mask only on channels where it pays.
 
@@ -322,7 +442,10 @@ def single_channel(ch: int, f: float, keep: bool = True,
                    mode: str = "time") -> Scenario:
     """One contaminated channel; keep=True integrates through it (noise
     penalty), keep=False excises it (volume penalty)."""
-    thr = 1.01 if keep else 0.0
+    f = _fraction(f, "masked fraction")
+    if not isinstance(keep, (bool, np.bool_)):
+        raise ValueError(f"keep must be a boolean, got {keep!r}")
+    thr = NO_EXCISION_THRESHOLD if keep else 0.0
     verb = "kept" if keep else "excised"
     return Scenario(f"ch{ch}_{int(round(100 * f))}_{verb}",
                     f"ch{ch} {100 * f:.0f}% masked ({verb})",

@@ -18,10 +18,14 @@ api.significance(fc, 2.0, mask)                   # sigma after 2 on-sky yr
 api.tolerance_curve(fc, band="dtv")               # years-to-target vs masking
 ```
 
-`examples/minimal_example.py` runs this end-to-end (~2 s). Channels masked
-above the excision threshold (default 50%) are excised, priced as survey
-volume; the rest cost effective integration time. Everything below explains
-the physics, the CHIME + DTV worked example, and how to regenerate or extend.
+`examples/minimal_example.py` runs this end-to-end (~2 s). In per-channel
+scenarios, channels masked at or above the excision threshold (default 50%) are
+excised and priced as survey volume; the rest cost effective integration
+time. Uniform tolerance curves deliberately retain the affected slices as a
+lost-time stress test. Pass an explicit `excise_threshold` to
+`api.scenario_from(uniform=...)` when uniform excision is the intended policy.
+Everything below explains the physics, the CHIME + DTV worked example, and
+how to regenerate or extend it.
 
 [pilot-proxy](https://github.com/WVURAIL/pilot-proxy) measures, per ATSC DTV
 channel, the fraction of observing time an F-statistic positive excess flags
