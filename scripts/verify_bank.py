@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
 """Verification pass for a Fisher bank and the forecast machinery.
 
-Targets the bank's own configuration (read from its metadata), so the
-direct-recomputation checks use the matching RadioFisher code path:
-
-  chime2022 bank  <->  fork branch rfi-noise-model-chime (chime-update base)
-  bull2015 bank   <->  fork branch rfi-noise-model (master base)
-
-Run with the matching branch checked out; verifying the bull2015 bank
-against the chime branch (or vice versa) fails by construction, because
-Simon Foreman's updated Omega_HI/b_HI/T_b models change the raw Fisher
-elements.
+Targets the bank's recorded configuration, cosmology, and canonical H I
+profile. RadioFisher is accepted through its versioned capability contract,
+not a historical branch name.
 
 Checks:
 1. Interpolation: bank F(z,t) at off-grid t vs direct rf.fisher() calls.
@@ -23,20 +16,15 @@ Checks:
 import argparse
 import contextlib
 import io
-import subprocess
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
-from baonoise import forecast, pkcache, scenarios, survey  # noqa: E402
-from baonoise.compat import import_radiofisher  # noqa: E402
-from baonoise.fisherbank import FisherBank  # noqa: E402
-from baonoise.resources import DEFAULT_BANK  # noqa: E402
+from baonoise import cosmologies, forecast, pkcache, scenarios, survey
+from baonoise.compat import import_radiofisher
+from baonoise.fisherbank import FisherBank
+from baonoise.resources import DEFAULT_BANK, filesystem_data_file
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--bank", default=DEFAULT_BANK)
@@ -44,25 +32,25 @@ args = ap.parse_args()
 
 rf, rf_dir = import_radiofisher()
 bank = FisherBank(args.bank)
-config = bank.meta.get("config", "bull2015")
+config = bank.meta["config"]
 style = "perbin_A" if config == "chime2022" else "shared_A"
-fc = forecast.Forecast(bank, rf, style=style)
-
-branch = subprocess.run(["git", "-C", str(rf_dir), "branch", "--show-current"],
-                        capture_output=True, text=True).stdout.strip()
-print(f"bank config={config} style={style}; RadioFisher branch={branch}")
-expected = "rfi-noise-model-chime" if config == "chime2022" else "rfi-noise-model"
-if branch and expected not in branch and "chime-update" not in branch:
-    print(f"  WARNING: direct-recompute checks expect branch '{expected}'")
+fc = forecast.Forecast(bank, rf, style=style, rf_dir=rf_dir)
+print(f"bank config={config} style={style}; RadioFisher={rf_dir}")
 
 # matching cosmology + experiment factory
 if config == "chime2022":
+    cosmology_name = bank.meta["cosmology"]
     cosmo = pkcache.load_fiducial_cosmology(
-        rf, ROOT / "data" / "cache_pk_chime2022.dat",
-        cosmo=survey.chime2022_cosmo(rf, rf_dir))
+        rf, filesystem_data_file(
+            "cache_pk_chime2022.dat" if cosmology_name == "planck2018"
+            else f"cache_pk_chime2022_{cosmology_name}.dat"),
+        cosmo=cosmologies.get(cosmology_name, rf, rf_dir))
     make_expt = lambda t: survey.chime2022_experiment(rf, rf_dir, ttot_hours=t)
 else:
-    cosmo = pkcache.load_fiducial_cosmology(rf, ROOT / "data" / "cache_pk.dat")
+    base = cosmologies.with_astrophysical_profile(
+        rf.experiments.cosmo, "bull2015", rf=rf)
+    cosmo = pkcache.load_fiducial_cosmology(
+        rf, filesystem_data_file("cache_pk.dat"), cosmo=base)
     make_expt = lambda t: survey.chime_experiment(rf, rf_dir, ttot_hours=t)
 cosmo_fns = rf.background_evolution_splines(cosmo)
 ok = True
@@ -137,7 +125,7 @@ print("== 5. in-fork RFI hooks vs bank-rescaling path ==")
 IB = 6
 cases = [
     ("measured", scenarios.measured(), [IB]),
-    ("uniform50_dtv", scenarios.uniform(0.50, "dtv"), [IB]),
+    ("uniform50_dtv", scenarios.uniform(0.50, scenarios.DTV_BAND), [IB]),
     ("ch30_kept_fourier",
      scenarios.single_channel(30, 0.97, keep=True, mode="fourier"), [IB]),
     ("measured (all bins)", scenarios.measured(), None),

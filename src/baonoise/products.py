@@ -1,10 +1,11 @@
 """One registry for the survey products.
 
 Every analysis script used to carry its own hardcoded product paths; this
-module replaces all of them with a single manifest (``data/products.json``,
-tracked) plus an optional machine-local overlay (``data/products.local.json``,
-gitignored) and an environment hook (``$BAONOISE_PRODUCT_DIRS``,
-colon-separated, searched first).
+module replaces all of them with a packaged manifest
+(``baonoise.data/products.json``) plus an optional machine-local overlay
+(``data/products.local.json``, gitignored) and an environment hook
+(``$BAONOISE_PRODUCT_DIRS``, separated by the platform path separator and
+searched first).
 
 Resolution, per channel: an explicit ``path`` (local overlay first, then
 manifest) that exists on disk wins; otherwise each search directory is tried
@@ -19,15 +20,24 @@ import json
 import os
 from pathlib import Path
 
+from .resources import PRODUCTS_MANIFEST
+
 _ROOT = Path(__file__).resolve().parents[2]
-MANIFEST = _ROOT / "data" / "products.json"
+MANIFEST = PRODUCTS_MANIFEST
 LOCAL = _ROOT / "data" / "products.local.json"
 ENV_DIRS = "BAONOISE_PRODUCT_DIRS"
 
 
+def _read_json(source) -> dict:
+    reader = getattr(source, "read_text", None)
+    text = reader(encoding="utf-8") if reader is not None \
+        else Path(source).read_text(encoding="utf-8")
+    return json.loads(text)
+
+
 def _search_dirs(manifest: dict, local: dict) -> list[Path]:
     dirs: list[Path] = []
-    for d in os.environ.get(ENV_DIRS, "").split(":"):
+    for d in os.environ.get(ENV_DIRS, "").split(os.pathsep):
         if d:
             dirs.append(Path(d))
     for src in (local, manifest):
@@ -37,12 +47,12 @@ def _search_dirs(manifest: dict, local: dict) -> list[Path]:
     return dirs
 
 
-def load(manifest_path: Path = MANIFEST,
+def load(manifest_path=MANIFEST,
          local_path: Path = LOCAL) -> tuple[dict[int, str], list[int]]:
     """(found, missing): every registered channel resolved to a file path,
     and the sorted channels whose products are absent everywhere."""
-    manifest = json.loads(Path(manifest_path).read_text())
-    local = (json.loads(Path(local_path).read_text())
+    manifest = _read_json(manifest_path)
+    local = (_read_json(local_path)
              if Path(local_path).exists() else {})
     dirs = _search_dirs(manifest, local)
     local_ch = local.get("channels", {})
@@ -53,9 +63,13 @@ def load(manifest_path: Path = MANIFEST,
         ch = int(ch_s)
         explicit = (local_ch.get(ch_s, {}).get("path")
                     or meta.get("path"))
-        if explicit and Path(explicit).exists():
-            found[ch] = str(explicit)
-            continue
+        if explicit:
+            explicit_path = Path(explicit)
+            if not explicit_path.is_absolute():
+                explicit_path = _ROOT / explicit_path
+            if explicit_path.exists():
+                found[ch] = str(explicit_path)
+                continue
         fid = meta["freq_id"]
         hit = None
         for d in dirs:
@@ -91,5 +105,5 @@ def paths(channels=None, announce: bool = True) -> dict[int, str]:
 
 
 def freq_id(ch: int) -> int:
-    manifest = json.loads(MANIFEST.read_text())
+    manifest = _read_json(MANIFEST)
     return int(manifest["channels"][str(ch)]["freq_id"])

@@ -17,35 +17,36 @@ look good; the averaging panel is a single seeded realization.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
-from baonoise.plots import (                              # noqa: E402
+from baonoise import channels
+from baonoise.constants import (CHIME_COARSE_CHANNEL_COUNT,
+                                CHIME_FREQUENCY_MAX_MHZ,
+                                CHIME_FREQUENCY_MIN_MHZ,
+                                HI_REST_FREQUENCY_MHZ)
+from baonoise.plots import (
     BASELINE, CRITICAL, GRID, INK, INK2, MUTED, SERIES, SURFACE,
     _save, setup_style)
-import matplotlib.pyplot as plt                           # noqa: E402
-from matplotlib.patches import Rectangle                  # noqa: E402
+from baonoise.resources import filesystem_data_file
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
-NU21 = 1420.406             # MHz
-DTV_LO, DTV_HI = 470.0, 608.0
-CHIME_LO, CHIME_HI = 400.0, 800.0
-BIN_MHZ = 400.0 / 1024.0    # 390.625 kHz raster
+DTV_LO, DTV_HI = channels.ATSC_CH14_LOWER_EDGE, channels.ATSC_DTV_UPPER_EDGE
+CHIME_LO, CHIME_HI = CHIME_FREQUENCY_MIN_MHZ, CHIME_FREQUENCY_MAX_MHZ
+BIN_MHZ = ((CHIME_HI - CHIME_LO) / CHIME_COARSE_CHANNEL_COUNT)
 PILOT_OFFSET_MHZ = 0.309441  # above the lower allocation edge (A/53)
 PILOT_DEFICIT_DB = 11.3      # pilot power below the data shelf
 CONCENTRATION_DB = 21.636    # deficit + 10log10(6 MHz / 3051.76 Hz)
 
 
 def z_of(nu):
-    return NU21 / np.asarray(nu, dtype=float) - 1.0
+    return HI_REST_FREQUENCY_MHZ / np.asarray(nu, dtype=float) - 1.0
 
 
 def nu_of(z):
-    return NU21 / (1.0 + np.asarray(z, dtype=float))
+    return HI_REST_FREQUENCY_MHZ / (1.0 + np.asarray(z, dtype=float))
 
 
 # ---------------------------------------------------------------- fig: band
@@ -60,10 +61,12 @@ def fig_band(outfile: Path):
                            facecolor=SERIES[0], alpha=0.30, edgecolor="none",
                            zorder=2))
     # the five allocations measured in this work: ch32-36, 578-608 MHz
-    ax.add_patch(Rectangle((578.0, y0), 30.0, y1 - y0, facecolor=SERIES[1],
+    measured_lo = channels.channel_edges(32)[0]
+    ax.add_patch(Rectangle((measured_lo, y0), DTV_HI - measured_lo,
+                           y1 - y0, facecolor=SERIES[1],
                            alpha=0.55, edgecolor="none", zorder=3))
-    for k in range(24):                       # allocation edges, ch14-36
-        x = DTV_LO + 6.0 * k
+    for k in range(len(channels.ATSC_DTV_CHANNELS) + 1):
+        x = DTV_LO + channels.ATSC_WIDTH * k
         ax.plot([x, x], [y0, y1], color=SURFACE, lw=0.7, zorder=4)
 
     ax.annotate("CHIME observing band, 400-800 MHz",
@@ -308,7 +311,7 @@ def fig_soundwave(outfile: Path):
 # Planck-2018 fiducial (Om=0.316, Ob=0.049, h=0.67), the identical spectrum
 # inside every forecast of Section VII. k is in Mpc^-1 (verified: the wiggle
 # spacing gives s = 145 Mpc and the turnover sits at k_eq = 0.011 Mpc^-1).
-PK_CACHE = ROOT / "data" / "cache_pk_chime2022.dat"
+PK_CACHE = filesystem_data_file("cache_pk_chime2022.dat")
 OM, OB, H = 0.316, 0.049, 0.67
 
 

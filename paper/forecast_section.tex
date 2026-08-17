@@ -278,14 +278,14 @@ Recovering clean-equivalent depth \emph{within that slice} would
 require $1/(1-f)\simeq33$ times as much integration, but this is not a
 factor of 33 for the whole bin or survey. In the direct Fisher
 calculation, channel-30 excision produces a 0.8 per cent survey-level
-penalty and changes the worst-bin 2 per cent $D_A$ target from 0.318 to
-0.363 on-sky years. This direct factor, 1.14, exceeds the analytic
+penalty and changes the worst-bin 2 per cent $D_A$ target from 0.315 to
+0.359 on-sky years. This direct factor, 1.14, exceeds the analytic
 $R_\mathrm{exc}=1/\sqrt{1-q}=1.09$ because
 Eq.~\eqref{eq:excision-ratios} holds in the noise-dominated limit,
 whereas the bin is partially cosmic-variance limited at this target;
 volume removed from a partly sample-variance-limited bin cannot be
 fully recovered with additional integration time. Retaining the
-channel gives 0.377 years under inverse-variance weighting and 1.984
+channel gives 0.373 years under inverse-variance weighting and 1.963
 years under the unweighted-Fourier reduction. For this channel and this
 target, excision is the lower-cost option under either convention.
 
@@ -313,7 +313,7 @@ marginalisation. A mask table can therefore be evaluated in
 milliseconds:
 
 \begin{verbatim}
-from baonoise import api
+from baonoise import api, scenarios
 
 fc = api.load()
 mask = {17: 0.333,
@@ -323,7 +323,8 @@ mask = {17: 0.333,
 api.required_time(fc, mask, target=5.0)
 api.required_time(fc, mask,
                   target=5.0, zbin=6)
-api.tolerance_curve(fc, band="dtv")
+api.tolerance_curve(fc,
+                    band=scenarios.DTV_BAND)
 \end{verbatim}
 
 The unmasked CHIME calculation is treated as the regression baseline.
@@ -335,10 +336,12 @@ scenarios through the direct RadioFisher hooks and the banked path.
 Unit tests cover channel edges, exact partial overlap, the no-mask
 identity, uniform masking, excision versus retained-time accounting,
 and agreement between the piecewise overlap calculation and the
-frequency-weight hook. Before archival release, the RadioFisher
-commit, cosmological configuration, redshift edges, baseline file
-checksum, mask-table checksum, and bank metadata should be pinned in a
-single versioned reference bundle.
+frequency-weight hook. Every schema-2 bank records the Bao and
+RadioFisher computational-source manifests and digests, cosmological
+parameters and physical densities, backend capabilities, redshift edges,
+power-spectrum cache identity, experiment settings, and baseline checksum.
+The numerical artifact therefore carries the reference bundle needed to
+audit the calculation that produced it.
 
 This structure is deliberate. It keeps the original forecast provenance
 visible while allowing the maintained package to remain small enough to
@@ -410,19 +413,20 @@ $c$ & $f_c$ & $c$ & $f_c$ & $c$ & $f_c$ \\
 The masking calculation is applied only after the unmasked forecast is
 validated. At the Overview normalisation of 8,760 on-sky hours, the
 clean per-bin volume-distance errors run from 0.47 per cent at
-$z=0.85$, through 0.62 per cent at $z=1.45$, to 1.04 per cent at
+$z=0.85$, through 0.61 per cent at $z=1.45$, to 1.03 per cent at
 $z=2.43$. They reproduce the percent-level scale and redshift
 dependence of the ideal-CHIME error bars in Fig.~31 of
 \citet{CHIMEOverview2022} using the same instrument, cosmology,
 binning, information flags, and marginalisation. The corresponding
-forecast survey-level BAO-amplitude signal-to-noise ratio is 48.45 at
-one on-sky year. These machine-readable values are used as the no-mask
-regression product; masking is not allowed to change bins outside its
-frequency support.
+forecast survey-level BAO-amplitude signal-to-noise ratio is 48.80 at
+one on-sky year, and the clean survey-level $(S/N)_A=5$ target requires
+208.9 on-sky hours. These machine-readable values are used as the
+no-mask regression product; masking is not allowed to change bins
+outside its frequency support.
 
 For the pilot-proxy-derived configuration, $\sigma(D_V)/D_V$ at
-$z=1.45$ increases from 0.62 to 0.738 per cent, and at $z=1.65$ from
-0.712 to 0.860 per cent. Bins outside the DTV redshift range are
+$z=1.45$ increases from 0.61 to 0.732 per cent, and at $z=1.65$ from
+0.706 to 0.853 per cent. Bins outside the DTV redshift range are
 unchanged.
 
 \subsection{Results}
@@ -453,15 +457,15 @@ from the fiducial inverse-variance result.}
 \toprule
 Scenario & $(S/N)_A(2\,\mathrm{yr})$ & $t/t_\mathrm{clean}$ \\
 \midrule
-No masking & 63.06 & 1.000 \\
-Pilot-proxy-derived & 61.46 (61.40) & 1.032 (1.034) \\
-25\% of DTV band masked & 60.52 & 1.075 \\
-50\% of DTV band masked & 57.42 & 1.151 \\
-75\% of DTV band masked & 53.46 & 1.218 \\
-97\% of DTV band masked & 49.30 & 1.255 \\
-50\% of entire band masked & 48.45 & 2.000 \\
-ch30 excised & 62.51 & 1.008 \\
-ch30 retained & 62.68 (59.78) & 1.013 (1.064) \\
+No masking & 63.51 & 1.000 \\
+Pilot-proxy-derived & 61.89 (61.83) & 1.032 (1.034) \\
+25\% of DTV band masked & 60.95 & 1.075 \\
+50\% of DTV band masked & 57.82 & 1.151 \\
+75\% of DTV band masked & 53.84 & 1.218 \\
+97\% of DTV band masked & 49.65 & 1.254 \\
+50\% of entire band masked & 48.80 & 2.000 \\
+ch30 excised & 62.95 & 1.008 \\
+ch30 retained & 63.12 (60.20) & 1.013 (1.064) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -478,14 +482,14 @@ Overview forecast normalisation. No calendar-duty factor is assumed.}
 \toprule
 $z$ bin & Scenario & $(S/N)_{A,b}=5$ & $\sigma(D_A)\le2\%$ \\
 \midrule
-1.40--1.50 & clean & 0.177\,yr & 0.318\,yr \\
-1.40--1.50 & pilot-proxy & 0.238\,yr & 0.426\,yr \\
-1.40--1.50 & pilot-proxy (F) & 0.239\,yr & 0.428\,yr \\
-1.40--1.50 & 50\% DTV masked & 0.353\,yr & 0.636\,yr \\
-1.40--1.50 & ch30 retained (F) & 1.103\,yr & 1.984\,yr \\
-1.40--1.50 & ch30 excised & 0.203\,yr & 0.363\,yr \\
-1.60--1.70 & clean & 0.212\,yr & 0.416\,yr \\
-1.60--1.70 & pilot-proxy & 0.289\,yr & 0.554\,yr \\
+1.40--1.50 & clean & 0.174\,yr & 0.315\,yr \\
+1.40--1.50 & pilot-proxy & 0.235\,yr & 0.421\,yr \\
+1.40--1.50 & pilot-proxy (F) & 0.236\,yr & 0.424\,yr \\
+1.40--1.50 & 50\% DTV masked & 0.349\,yr & 0.629\,yr \\
+1.40--1.50 & ch30 retained (F) & 1.088\,yr & 1.963\,yr \\
+1.40--1.50 & ch30 excised & 0.200\,yr & 0.359\,yr \\
+1.60--1.70 & clean & 0.209\,yr & 0.411\,yr \\
+1.60--1.70 & pilot-proxy & 0.286\,yr & 0.547\,yr \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -503,7 +507,7 @@ is not an effective uniform mask fraction.}
 
 The pilot-proxy-derived configuration increases the survey-level time
 by 3.2 per cent under the fiducial reduction. In the most affected
-bin, the 2 per cent $D_A$ target moves from 0.318 to 0.426 on-sky
+bin, the 2 per cent $D_A$ target moves from 0.315 to 0.421 on-sky
 years, a factor 1.34. The inverse-variance and unweighted-Fourier
 results differ by only 0.5 per cent for that target after the two
 near-persistent channels are excised. Most of the cost comes from the
@@ -512,8 +516,8 @@ channels masked at the one-to-few per cent level.
 
 Uniformly masking half of the DTV band gives a 15.1 per cent
 survey-level penalty. In the $z=1.40$--$1.50$ bin, which lies wholly
-inside the DTV band, the 2 per cent $D_A$ target doubles from 0.318 to
-0.636 on-sky years, as expected for uniform 50 per cent masking in the
+inside the DTV band, the 2 per cent $D_A$ target doubles from 0.315 to
+0.629 on-sky years, as expected for uniform 50 per cent masking in the
 noise-dominated limit. The separate 50 per cent whole-band test gives
 exactly a factor of two at survey level and serves as an internal
 scaling check. The 97 per cent DTV stress test still leaves a moderate
@@ -550,15 +554,15 @@ $z\simeq1.45$, 1.65, and 1.9 follow the exact channel--bin overlaps.}
 The main numerical conclusions are stable under four checks. First,
 once channels 24 and 30 are excised, the two noise reductions give
 nearly the same answer for the pilot-proxy-derived scenario: the survey
-penalties are 1.032 and 1.034, and the worst-bin $D_A$ times are 0.426
-and 0.428 on-sky years. The large difference appears only when a
+penalties are 1.032 and 1.034, and the worst-bin $D_A$ times are 0.421
+and 0.424 on-sky years. The large difference appears only when a
 near-dead slice is deliberately kept in an unweighted transform.
 
 Second, the analysis was repeated with the original five-cylinder CHIME
 design study in \citet{Bull2015}, which differs in geometry, noise
 model, sky area, cosmology, and parameter treatment. The whole-band 50
 per cent test remains exactly a factor of two. The pilot-proxy-derived
-worst-bin $D_A$ penalty changes from 1.34 to 1.43, while the
+worst-bin $D_A$ penalty changes from 1.34 to 1.46, while the
 survey-level 50 per cent DTV penalty changes from 1.15 to 1.28 because
 the DTV band contributes a different fraction of the total
 information. These comparisons support using penalty ratios, but they
@@ -566,19 +570,22 @@ do not make the absolute times instrument independent.
 
 Third, in the Bull-configuration bank, increasing the
 foreground-residual amplitude from $\epsilon_\mathrm{FG}=10^{-6}$ to
-$10^{-5}$ changes absolute times by approximately 3 per cent and
-masking penalties by at most 0.4 per cent. This is a limited
+$10^{-5}$ changes the clean survey time by 3.3 per cent and
+survey-level masking penalties by at most 0.43 per cent. This is a limited
 sensitivity test, not a substitute for a realistic foreground and
 calibration covariance.
 
-Fourth, the fiducial cosmology. Rebuilding the CHIME bank with the
-P-ACT-LB parameters from the Atacama Cosmology Telescope DR6 release
-\citep{ACTDR6}, which combine ACT with \textit{Planck}, CMB lensing,
-and BAO data, shifts absolute required times by approximately 10 per
-cent --- the clean survey-level $(S/N)_A=5$ time moves from 211.5 to
-189.5 on-sky hours --- while changing every masking penalty in
-Tables~\ref{tab:survey} and \ref{tab:bins} by at most 0.13 per cent.
-Both fiducial cosmologies ship as named configurations of the tool.
+Fourth, the full CHIME calculation was repeated with the P-ACT-LB
+parameters from the Atacama Cosmology Telescope DR6 release
+\citep{ACTDR6}. The Planck-2018 and P-ACT-LB banks use the same time grid,
+instrument, astrophysical profile, physical-density convention,
+power-spectrum generator, and RadioFisher 1.0 backend contract. This matched
+comparison separates a change of fiducial cosmology from changes in the
+implementation. The clean survey-level five-sigma time changes from
+208.9 to 187.0 on-sky hours ($-10.5$ per cent), whereas the masking
+penalty changes by at most 0.225 per cent across the scenarios and metrics
+tabulated here. Thus the fiducial cosmology materially changes the absolute
+normalisation but has negligible effect on the relative masking cost.
 
 All times in the tables and figures are accumulated on-sky hours, with
 8,760\,hr labelled as one on-sky year to match the Overview forecast.
@@ -705,9 +712,9 @@ The analysis package and manuscript source distributed with this draft
 contain the Fisher banks, the pilot-proxy-derived mask table,
 machine-readable result tables, and the scripts used to generate the
 figures; the maintained repository is
-\url{https://github.com/WVURAIL/bao-noise-tolerance}. The RadioFisher backend is available from the author's fork
-\citep{RadioFisherFork}, which is based on Foreman's public CHIME
-branch \citep{Foreman2021}. The archival release associated with
-publication should pin the exact commits and record checksums for the
-baseline-density file, mask table, cosmological configuration, and
-Fisher bank.
+\url{https://github.com/WVURAIL/bao-noise-tolerance}. The maintained
+RadioFisher backend is available from WVURAIL \citep{RadioFisherFork} and
+retains Foreman's public CHIME configuration \citep{Foreman2021}. Each
+distributed Fisher bank records the scientific source digests and checksums
+for its baseline-density file, cosmological configuration, power-spectrum
+cache, and experiment settings.

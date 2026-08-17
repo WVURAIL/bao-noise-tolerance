@@ -23,16 +23,13 @@ how far away it is and which of the open items would close it.
 from __future__ import annotations
 
 import argparse
-import sys
-from pathlib import Path
+
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise import products as _products  # noqa: E402
-from baonoise import residual as R                       # noqa: E402
+from baonoise import products as _products
+from baonoise import residual as R
 
 # The bias tolerance at the published criterion, b <= sigma (Amara &
 # Refregier 2008), binding on f-sigma-8 across the DTV redshift bins.

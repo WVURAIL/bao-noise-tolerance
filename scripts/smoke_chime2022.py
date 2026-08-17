@@ -1,36 +1,29 @@
 #!/usr/bin/env python3
 """Smoke test for the Amiri et al. (2022) Appendix-A configuration:
-build the Planck-2018+mnu P(k) cache, run one bin's Fisher matrix on the
-rfi-noise-model-chime branch, and check the per-bin marginalisation."""
+load the Planck-2018 P(k) cache, run one bin's Fisher matrix through the
+versioned RadioFisher backend, and check the per-bin marginalisation."""
 import contextlib
 import io
-import subprocess
-import sys
 import time
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
 import numpy as np
 
-from baonoise import forecast, pkcache, survey
+from baonoise import cosmologies, forecast, pkcache, survey
 from baonoise.compat import import_radiofisher
+from baonoise.resources import filesystem_data_file
 
 rf, rf_dir = import_radiofisher()
-branch = subprocess.run(["git", "-C", str(rf_dir), "branch", "--show-current"],
-                        capture_output=True, check=False,
-                        text=True).stdout.strip()
-print("RadioFisher branch:", branch)
+print("RadioFisher backend:", rf_dir)
 
 cosmo = pkcache.load_fiducial_cosmology(
-    rf, ROOT / "data" / "cache_pk_chime2022.dat",
-    cosmo=survey.chime2022_cosmo(rf, rf_dir))
+    rf, filesystem_data_file("cache_pk_chime2022.dat"),
+    cosmo=cosmologies.get("planck2018", rf, rf_dir))
 print(f"P(k): k in [{cosmo['k_in_min']:.1e}, {cosmo['k_in_max']:.1f}] Mpc^-1")
 cosmo_fns = rf.background_evolution_splines(cosmo)
 
 zs, zc = survey.chime2022_zbins()
-expt = survey.chime2022_experiment(rf, rf_dir, ttot_hours=8760.0)  # 1 yr
+expt = survey.chime2022_experiment(
+    rf, rf_dir, ttot_hours=survey.OVERVIEW_ONSKY_YEAR_HOURS)  # 1 yr
 print(f"zbins: {len(zc)}; Tsys(z=1)={expt['Tsys_tot(z)'](1.0)/1e3:.0f} K; "
       f"Sarea={expt['Sarea']:.3f} sr; eps_fg={expt['epsilon_fg']}")
 

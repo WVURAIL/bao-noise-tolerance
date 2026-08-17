@@ -16,29 +16,32 @@ is the same number of sigma wrong on day one and after ten years, and it looks
 more converged the whole way. That is what the second panel shows: flat lines
 where a reader expects descending ones.
 
-    python3 scripts/plot_convergence.py --out out/
+The bias-response bank is not shipped. Build it explicitly first:
+
+    python scripts/build_bank.py --config chime2022 --cosmology planck2018 \\
+        --p-res 1.0 --dense-knee \\
+        --out data/fisher_bank_chime2022_pres_dense.npz
+    python scripts/plot_convergence.py --out out/
 """
 from __future__ import annotations
 
 import argparse
 import importlib.util
-import sys
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-import matplotlib                                        # noqa: E402
+import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt                          # noqa: E402
+import matplotlib.pyplot as plt
 
-from baonoise import incumbent as I                      # noqa: E402
-from baonoise import products as _products  # noqa: E402
-from baonoise import residual as R                       # noqa: E402
-from baonoise import survey                              # noqa: E402
-from baonoise.fisherbank import FisherBank               # noqa: E402
+from baonoise import incumbent as I
+from baonoise import products as _products
+from baonoise import residual as R
+from baonoise import survey
+from baonoise.npzio import load_npz
 
 # Validated four-slot categorical palette:
 #   node scripts/validate_palette.js "#2a78d6,#eb6834,#1baf7a,#a8518a" --pairs all
@@ -95,7 +98,7 @@ def policy_table(npz):
     gain = (st.intraday_fraction
             * R.n_coh_from_correlation_time(corr.tau_for_budget)
             + st.fast_fraction)
-    d = np.load(npz, allow_pickle=True)
+    d = load_npz(npz)
     valid = d["valid"][:, 0].astype(bool)
     f_dep = float(d["reject_mask"][valid, 0].astype(bool).mean())
     res = {r.name: r for r in I.compare_flaggers(npz)[0]}
@@ -117,17 +120,19 @@ def main(argv=None):
                                           "fisher_bank_chime2022_pres_dense.npz"))
     ap.add_argument("--out", type=Path, default=Path("out"))
     args = ap.parse_args(argv)
+    bt = load_bias_tools()
+    try:
+        bank = bt.load_bias_bank(args.bank, expected_kfg_fac=None)
+    except ValueError as exc:
+        ap.error(str(exc))
     if args.npz is None:
         ap.error("channel-33 product not found by the manifest; pass --npz")
-
-    bt = load_bias_tools()
-    bank = FisherBank(args.bank)
     names = list(bank.paramnames)
     zs = bank.zs
     ib = [i for i in range(len(zs) - 1) if abs(zs[i] - 1.40) < 1e-9][0]
 
     yrs = np.logspace(np.log10(0.05), np.log10(10.0), 40)
-    hours = yrs * survey.ONSKY_YEAR_HOURS
+    hours = yrs * survey.OVERVIEW_ONSKY_YEAR_HOURS
 
     def sig_and_slope(t):
         dth, sig = bt.bias_per_unit_r(bank.F(ib, t), names)

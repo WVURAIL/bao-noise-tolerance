@@ -53,11 +53,14 @@ case: a slice whose r reaches it is dropped rather than integrated through.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from numbers import Integral, Real
+from numbers import Integral
 
 import numpy as np
 
 from . import channels as chn
+from ._validation import real_scalar
+from .constants import (CHIME_FREQUENCY_MAX_MHZ, CHIME_FREQUENCY_MIN_MHZ,
+                        HI_REST_FREQUENCY_MHZ)
 
 
 DEFAULT_EXCISE_THRESHOLD = 0.5
@@ -67,9 +70,7 @@ MODES = frozenset({"time", "fourier"})
 
 def _as_real(value, field_name: str) -> float:
     """Return *value* as a scalar float, with a useful validation error."""
-    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
-        raise ValueError(f"{field_name} must be a real scalar, got {value!r}")
-    return float(value)
+    return real_scalar(value, field_name)
 
 
 def _fraction(value, field_name: str) -> float:
@@ -132,15 +133,63 @@ def _overlap(a_lo: float, a_hi: float, b_lo: float, b_hi: float) -> float:
     return max(0.0, min(a_hi, b_hi) - max(a_lo, b_lo))
 
 
+@dataclass(frozen=True)
+class FrequencyBand:
+    """A named, continuous observing-frequency interval in MHz."""
+
+    name: str
+    nu_min_mhz: float
+    nu_max_mhz: float
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name \
+                or self.name.strip() != self.name:
+            raise ValueError("frequency-band name must be a non-empty string")
+        lo = _as_real(self.nu_min_mhz, "nu_min_mhz")
+        hi = _as_real(self.nu_max_mhz, "nu_max_mhz")
+        if not np.isfinite(lo) or not np.isfinite(hi) or lo < 0.0 or hi <= lo:
+            raise ValueError(
+                "frequency-band edges must be finite and satisfy "
+                f"0 <= nu_min_mhz < nu_max_mhz, got {(lo, hi)!r}")
+        object.__setattr__(self, "nu_min_mhz", lo)
+        object.__setattr__(self, "nu_max_mhz", hi)
+
+
+DTV_BAND = FrequencyBand(
+    "dtv", chn.ATSC_CH14_LOWER_EDGE, chn.ATSC_DTV_UPPER_EDGE)
+CHIME_BAND = FrequencyBand(
+    "chime", CHIME_FREQUENCY_MIN_MHZ, CHIME_FREQUENCY_MAX_MHZ)
+
+
+def _band_values(values, value_validator, field_name: str
+                 ) -> dict[FrequencyBand, float]:
+    """Validate and copy a frequency-band-to-value mapping."""
+    try:
+        items = values.items()
+    except AttributeError as exc:
+        raise ValueError(
+            f"{field_name} must be a FrequencyBand-to-value mapping") from exc
+    out = {}
+    for band, value in items:
+        if not isinstance(band, FrequencyBand):
+            raise ValueError(
+                f"{field_name} keys must be FrequencyBand objects, got "
+                f"{band!r}")
+        out[band] = value_validator(value, f"{field_name}[{band.name!r}]")
+    return out
+
+
 @dataclass
 class Scenario:
-    """A per-channel masking scenario."""
+    """Masking over physical channels and/or continuous frequency bands."""
     name: str
     label: str
     fractions: dict[int, float] = field(default_factory=dict)  # ch -> f_masked
+    frequency_fractions: dict[FrequencyBand, float] = field(default_factory=dict)
     excise_threshold: float = DEFAULT_EXCISE_THRESHOLD
     mode: str = "time"           # 'time' or 'fourier'
     residuals: dict[int, float] = field(default_factory=dict)  # ch -> r
+    frequency_residuals: dict[FrequencyBand, float] = field(default_factory=dict)
     residual_excise_threshold: float = NO_EXCISION_THRESHOLD
 
     def __post_init__(self) -> None:
@@ -150,10 +199,19 @@ class Scenario:
                 f"mode must be one of {sorted(MODES)}, got {self.mode!r}")
         self.fractions = _channel_values(self.fractions, _fraction, "fractions")
         self.residuals = _channel_values(self.residuals, _residual, "residuals")
+        self.frequency_fractions = _band_values(
+            self.frequency_fractions, _fraction, "frequency_fractions")
+        self.frequency_residuals = _band_values(
+            self.frequency_residuals, _residual, "frequency_residuals")
         self.excise_threshold = _fraction_threshold(
             self.excise_threshold, "excise_threshold")
         self.residual_excise_threshold = _residual_threshold(
             self.residual_excise_threshold, "residual_excise_threshold")
+        slices = sorted((lo, hi) for lo, hi, _, _ in self._physical_slices())
+        for (_, previous_hi), (lo, _) in zip(slices, slices[1:], strict=False):
+            if lo < previous_hi:
+                raise ValueError(
+                    "channel and frequency-band masks must not overlap")
 
     # ------------------------------------------------------------------
     def keep_weight(self, ch: int) -> float:
@@ -162,9 +220,30 @@ class Scenario:
         r = self.residuals.get(ch, 0.0)
         return (1.0 - f) / (1.0 + r)
 
+    def band_keep_weight(self, band: FrequencyBand) -> float:
+        """Surviving-time weight for a continuous frequency band."""
+        f = self.frequency_fractions.get(band, 0.0)
+        r = self.frequency_residuals.get(band, 0.0)
+        return (1.0 - f) / (1.0 + r)
+
     def is_excised(self, ch: int) -> bool:
         return (self.fractions.get(ch, 0.0) >= self.excise_threshold
                 or self.residuals.get(ch, 0.0) >= self.residual_excise_threshold)
+
+    def is_band_excised(self, band: FrequencyBand) -> bool:
+        return (
+            self.frequency_fractions.get(band, 0.0) >= self.excise_threshold
+            or self.frequency_residuals.get(band, 0.0)
+            >= self.residual_excise_threshold)
+
+    def _physical_slices(self):
+        """Yield non-overlapping ``(lo, hi, weight, excised)`` slices."""
+        for ch in set(self.fractions) | set(self.residuals):
+            lo, hi = chn.channel_edges(ch)
+            yield lo, hi, self.keep_weight(ch), self.is_excised(ch)
+        for band in set(self.frequency_fractions) | set(self.frequency_residuals):
+            yield (band.nu_min_mhz, band.nu_max_mhz,
+                   self.band_keep_weight(band), self.is_band_excised(band))
 
     # ------------------------------------------------------------------
     def bin_factors(self, nu_lo: float, nu_hi: float) -> tuple[float, float]:
@@ -174,25 +253,24 @@ class Scenario:
             return 1.0, 1.0
 
         excised = 0.0
-        masked_slices = []   # (bandwidth, weight) for surviving DTV slices
-        dtv_total = 0.0
-        for ch in set(self.fractions) | set(self.residuals):
-            lo, hi = chn.channel_edges(ch)
+        masked_slices = []   # (bandwidth, weight) for surviving slices
+        affected_total = 0.0
+        for lo, hi, weight, excised_slice in self._physical_slices():
             ov = _overlap(nu_lo, nu_hi, lo, hi)
             if ov <= 0.0:
                 continue
-            dtv_total += ov
-            if self.is_excised(ch):
+            affected_total += ov
+            if excised_slice:
                 excised += ov
             else:
-                masked_slices.append((ov, self.keep_weight(ch)))
+                masked_slices.append((ov, weight))
 
         v_frac = (width - excised) / width
         surv = width - excised
         if surv <= 0.0:
             return 0.0, 1.0
 
-        clean_bw = width - dtv_total          # band with no DTV allocation
+        clean_bw = width - affected_total
         if self.mode == "time":
             acc = clean_bw * 1.0
             acc += sum(bw * wt for bw, wt in masked_slices)
@@ -211,8 +289,8 @@ class Scenario:
         """(Nbins, 2) array of (v_frac, w_bar) for RadioFisher z-bin edges."""
         out = []
         for i in range(len(zs) - 1):
-            nu_lo = chn.NU_LINE / (1.0 + zs[i + 1])
-            nu_hi = chn.NU_LINE / (1.0 + zs[i])
+            nu_lo = HI_REST_FREQUENCY_MHZ / (1.0 + zs[i + 1])
+            nu_hi = HI_REST_FREQUENCY_MHZ / (1.0 + zs[i])
             out.append(self.bin_factors(nu_lo, nu_hi))
         return np.array(out)
 
@@ -226,11 +304,9 @@ class Scenario:
 
         Must stay consistent with :meth:`bin_factors`, since
         ``Forecast.sigma_A_direct`` uses this hook to validate the bank path."""
-        chans = sorted(set(self.fractions) | set(self.residuals))
         edges, values = [], []
-        for ch in chans:
-            lo, hi = chn.channel_edges(ch)
-            w = np.nan if self.is_excised(ch) else self.keep_weight(ch)
+        for lo, hi, weight, excised_slice in self._physical_slices():
+            w = np.nan if excised_slice else weight
             edges.append((lo, hi))
             values.append(w)
         edges = np.array(edges)
@@ -315,77 +391,45 @@ def measured(rates_csv=None, refused_fraction: float = chn.REFUSED_FRACTION,
                     residual_excise_threshold=residual_excise_threshold)
 
 
-def band_channels(band: str = "dtv") -> list[int]:
-    """ATSC channel numbers spanning a band."""
-    if band == "dtv":
-        return [c for c in range(14, 37)]
-    if band == "all":
-        # tile 400-800 MHz in 6 MHz slices using the same edge convention
-        return [c for c in range(2, 69) if chn.channel_edges(c)[1] > 400.0
-                and chn.channel_edges(c)[0] < 800.0]
-    raise ValueError(band)
-
-
-def uniform(f: float, band: str = "dtv", excise: bool = False,
-            mode: str = "time", residual: float = 0.0,
+def uniform(f: float, band: FrequencyBand = DTV_BAND, *, mode: str = "time",
+            residual: float = 0.0,
             excise_threshold: float | None = None,
-            residuals: dict[int, float] | None = None,
             residual_excise_threshold: float = NO_EXCISION_THRESHOLD) -> Scenario:
     """Uniform masked fraction f across a band.
 
-    band='dtv'  : ATSC channels 14-36 (470-608 MHz), the pilot-proxy survey band
-    band='all'  : the entire CHIME band, approximated by ATSC-width slices
-                  from 400-800 MHz (channels -2..68 in extended numbering)
+    ``band`` is an explicit :class:`FrequencyBand`; use :data:`DTV_BAND` for
+    470--608 MHz or :data:`CHIME_BAND` for the complete 400--800 MHz band.
     residual    : uniform residual-to-thermal ratio r left in the kept data
 
     Uniform scenarios are retained-time stress tests by default, even when
     ``f`` exceeds the measured-scenario excision threshold. Pass
-    ``excise_threshold=...`` to apply a threshold, or ``excise=True`` to
-    excise the whole uniformly affected band. The latter is retained for
-    compatibility and is mutually exclusive with an explicit threshold.
-    Since fractions are bounded by one, any threshold above one also disables
-    excision; prefer ``NO_EXCISION_THRESHOLD`` when expressing that policy in
-    new code.
+    ``excise_threshold=...`` to apply a threshold. Since fractions are bounded
+    by one, any threshold above one also disables excision; prefer
+    ``NO_EXCISION_THRESHOLD`` when expressing that policy.
     """
     f = _fraction(f, "uniform masked fraction")
     residual = _residual(residual, "uniform residual")
-    if not isinstance(excise, (bool, np.bool_)):
-        raise ValueError(f"excise must be a boolean, got {excise!r}")
-    if excise and excise_threshold is not None:
-        raise ValueError("provide either excise=True or excise_threshold=, not both")
-    if residuals is not None and residual != 0.0:
-        raise ValueError("provide at most one of residuals= or residual=")
-
-    chans = band_channels(band)
-    threshold = (f if excise else NO_EXCISION_THRESHOLD)
-    if excise_threshold is not None:
-        threshold = excise_threshold
+    if not isinstance(band, FrequencyBand):
+        raise ValueError(
+            "band must be a FrequencyBand such as DTV_BAND or CHIME_BAND")
+    threshold = (NO_EXCISION_THRESHOLD if excise_threshold is None
+                 else excise_threshold)
     threshold = _fraction_threshold(threshold, "excise_threshold")
-    res = (dict(residuals) if residuals is not None
-           else ({c: residual for c in chans} if residual else {}))
     scenario = Scenario(
-        f"uniform{int(round(100 * f))}_{band}", "uniform scenario",
-        fractions={c: f for c in chans}, excise_threshold=threshold,
-        mode=mode, residuals=res,
+        f"uniform{int(round(100 * f))}_{band.name}", "uniform scenario",
+        frequency_fractions={band: f}, excise_threshold=threshold,
+        mode=mode,
+        frequency_residuals=({band: residual} if residual else {}),
         residual_excise_threshold=residual_excise_threshold)
 
-    # Build the descriptive label only after Scenario has validated both
-    # policies. A residual threshold can excise an otherwise retained mask.
-    # A channel-dependent residual mapping can produce mixed dispositions, so
-    # its label deliberately reports inputs rather than claiming one outcome.
-    if residuals is not None:
-        scenario.label = (
-            f"{100 * f:.0f}% uniform masked fraction, {band} band; "
-            "channel-dependent residuals")
-    else:
-        tag = "excised" if scenario.is_excised(chans[0]) else "masked"
-        rtag = f", r={residual:g}" if residual else ""
-        scenario.label = f"{100 * f:.0f}% {tag}, {band} band{rtag}"
+    tag = "excised" if scenario.is_band_excised(band) else "masked"
+    rtag = f", r={residual:g}" if residual else ""
+    scenario.label = f"{100 * f:.0f}% {tag}, {band.name} band{rtag}"
     return scenario
 
 
 def at_threshold(per_channel: dict[int, tuple[float, float]],
-                 eta: float | None = None,
+                 eta=None,
                  excise_threshold: float = DEFAULT_EXCISE_THRESHOLD,
                  residual_excise_threshold: float = NO_EXCISION_THRESHOLD,
                  mode: str = "time") -> Scenario:
@@ -399,8 +443,9 @@ def at_threshold(per_channel: dict[int, tuple[float, float]],
     """
     fr = {int(c): float(v[0]) for c, v in per_channel.items()}
     rs = {int(c): float(v[1]) for c, v in per_channel.items()}
-    tag = "" if eta is None else f" (eta={eta:g})"
-    return Scenario(f"threshold{'' if eta is None else f'_{eta:g}'}",
+    eta_text = None if eta is None else str(eta)
+    tag = "" if eta_text is None else f" (eta={eta_text})"
+    return Scenario(f"threshold{'' if eta_text is None else f'_{eta_text}'}",
                     f"Detector operating point{tag}",
                     fractions=fr, residuals=rs,
                     excise_threshold=excise_threshold,

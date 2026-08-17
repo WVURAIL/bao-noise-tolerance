@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "baonoise"
-version = "0.1.0"
+version = "1.0.0"
 description = "RFI-masking noise-tolerance forecasts for 21cm BAO detection with RadioFisher + pilot-proxy"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,8 +23,15 @@ dependencies = [
 pk = ["camb"]
 test = ["pytest"]
 
+[project.scripts]
+baonoise-forecast = "baonoise.cli:forecast_main"
+baonoise-build-bank = "baonoise.cli:build_bank_main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"baonoise.data" = ["*.npz", "*.csv"]
+"baonoise.data" = ["*.npz", "*.csv", "*.json", "*.dat"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

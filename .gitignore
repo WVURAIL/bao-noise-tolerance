@@ -13,11 +13,25 @@ __pycache__/
 *.pdf
 *.png
 
-# The small, canonical fast-path bank is intentional package data.
+# Canonical release and matched research-comparison banks are intentional data.
 !src/baonoise/data/fisher_bank_chime2022.npz
+!src/baonoise/data/fisher_bank_chime2022_pact2025.npz
+!data/fisher_bank_bull2015_planck2013_epsfg1e-6.npz
+!data/fisher_bank_bull2015_planck2013_epsfg1e-5.npz
 
 # Machine-local product locations
 data/products.local.json
 
 # Build artifacts
+build/
+dist/
 *.egg-info/
+
+# Local LaTeX build products (the paper sources remain tracked).
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.log
+paper/*.out

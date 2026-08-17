@@ -30,17 +30,15 @@ or wrongly regenerated data file fails loudly rather than plotting.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise.plots import (                              # noqa: E402
+from baonoise.plots import (
     INK, INK2, SERIES, _save, setup_style)
-import matplotlib.pyplot as plt                           # noqa: E402
+import matplotlib.pyplot as plt
 
 DATA = ROOT / "data" / "worked_example_ch506.csv"
 ANCHOR = 62                 # survey-measured anchor f_a for channel 506
@@ -53,19 +51,32 @@ def usable_bulk() -> np.ndarray:
     return np.array([b for b in range(0, 256, 2) if b not in (60, 62, 64)])
 
 
+def require(condition, message: str) -> None:
+    """Keep reconstruction gates active even when Python runs with ``-O``."""
+    if not condition:
+        raise RuntimeError(message)
+
+
 def check(T_a: np.ndarray, T_b: np.ndarray, bulk: np.ndarray) -> None:
-    """Assert every statistic the dissertation quotes for this example."""
+    """Validate every statistic the dissertation quotes for this example."""
     med_a = float(np.median(T_a[bulk]))
     med_b = float(np.median(T_b[bulk]))
-    assert len(bulk) == 125, len(bulk)
-    assert [round(v, 3) for v in T_a[60:65]] == [
-        1.066, 8.730, 18.615, 7.598, 1.083], T_a[60:65]
-    assert round(med_a, 3) == 1.009, med_a
-    assert abs(float(np.percentile(T_a[bulk], 90)) - 1.165) < 0.005
-    assert round(med_b, 3) == 0.833, med_b
-    assert round(T_a[60:65].max() / med_a, 1) == 18.4
-    assert round(float(T_b[60:65].max()), 2) == 2.59
-    assert round(T_b[60:65].max() / med_b, 1) == 3.1
+    require(len(bulk) == 125, f"expected 125 bulk samples, got {len(bulk)}")
+    require([round(v, 3) for v in T_a[60:65]] ==
+            [1.066, 8.730, 18.615, 7.598, 1.083],
+            f"worked-example pilot bins changed: {T_a[60:65]}")
+    require(round(med_a, 3) == 1.009,
+            f"unexpected panel-A median: {med_a}")
+    require(abs(float(np.percentile(T_a[bulk], 90)) - 1.165) < 0.005,
+            "unexpected panel-A 90th percentile")
+    require(round(med_b, 3) == 0.833,
+            f"unexpected panel-B median: {med_b}")
+    require(round(T_a[60:65].max() / med_a, 1) == 18.4,
+            "unexpected panel-A peak ratio")
+    require(round(float(T_b[60:65].max()), 2) == 2.59,
+            "unexpected panel-B peak")
+    require(round(T_b[60:65].max() / med_b, 1) == 3.1,
+            "unexpected panel-B peak ratio")
 
 
 def panel(ax, T, med, title, label_med, label_eta):

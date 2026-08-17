@@ -30,22 +30,20 @@ style; this script only prepares the per-channel arrays it takes.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise import plots                                # noqa: E402
-from baonoise import residual as R                        # noqa: E402
+from baonoise import plots
+from baonoise import residual as R
 
 # 470-608 MHz DTV allocations, by physical channel number.
 ALLOCATION_MHZ = {32: "578-584", 33: "584-590", 34: "590-596",
                   35: "596-602", 36: "602-608"}
 
-from baonoise import products as _P                       # noqa: E402
+from baonoise import products as _P
+from baonoise.npzio import load_npz
 
 DEFAULT_PRODUCTS = [p for _c, p in sorted(
     _P.paths(channels=(32, 33, 34, 35, 36), announce=False).items())]
@@ -59,7 +57,7 @@ def channel_row(path) -> dict:
     numbers annotated on the plate are checked rather than assumed.
     """
     prov = R.floor_provenance(path)
-    d = np.load(path, allow_pickle=True)
+    d = load_npz(path)
     v = d["valid"][:, 0].astype(bool)
     rej = d["reject_mask"][:, 0].astype(bool)
     F = d["fstat_raw"][:, 0]

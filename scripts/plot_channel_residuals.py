@@ -30,18 +30,18 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-import matplotlib                                    # noqa: E402
+import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt                      # noqa: E402
-from matplotlib.gridspec import GridSpec             # noqa: E402
-from matplotlib.lines import Line2D                  # noqa: E402
+import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
+from matplotlib.lines import Line2D
 
-from baonoise import residual as R                   # noqa: E402
-from baonoise import forecast, scenarios             # noqa: E402
-from baonoise.fisherbank import FisherBank           # noqa: E402
-from baonoise.resources import DEFAULT_BANK          # noqa: E402
+from baonoise import residual as R
+from baonoise import forecast, scenarios
+from baonoise.fisherbank import FisherBank
+from baonoise.resources import DEFAULT_BANK
+from baonoise.npzio import load_npz
 
 # Validated categorical slots 1-3 (all-pairs, light surface):
 #   node scripts/validate_palette.js "#2a78d6,#eb6834,#1baf7a" --pairs all
@@ -89,7 +89,7 @@ def tidy(ax, spines=("top", "right")):
 
 def quarterly(path, off_through):
     """(quarter_float, masked_fraction, median_shelf_db) per quarter."""
-    d = np.load(path, allow_pickle=True)
+    d = load_npz(path)
     v = d["valid"][:, 0].astype(bool)
     rej = d["reject_mask"][:, 0].astype(bool)
     s = d["snr_shelf_db"][:, 0]
@@ -124,7 +124,7 @@ def main() -> int:
     # ---------------- gather -------------------------------------------
     chans = []
     for p in args.npz:
-        ch = int(np.load(p, allow_pickle=True)["physical_channel"][0])
+        ch = int(load_npz(p)["physical_channel"][0])
         off = offs.get(ch)
         budget, st, ct = R.budget_from_products(p, off_through=off,
                                                 delay_key=args.delay)

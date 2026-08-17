@@ -25,14 +25,16 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import numpy as np
+from .npzio import load_npz
+from .constants import HI_REST_FREQUENCY_MHZ
 
 from .resources import DEFAULT_RATES_CSV
 
-NU_LINE = 1420.406  # MHz
-
 ATSC_CH14_LOWER_EDGE = 470.0  # MHz
 ATSC_WIDTH = 6.0              # MHz
+ATSC_DTV_CHANNELS = tuple(range(14, 37))
+ATSC_DTV_UPPER_EDGE = (
+    ATSC_CH14_LOWER_EDGE + len(ATSC_DTV_CHANNELS) * ATSC_WIDTH)
 
 # Channels with no calibrated zero point in pilot-proxy (persistently on-air).
 REFUSED_CHANNELS = (24, 30)
@@ -54,7 +56,8 @@ def channel_edges(ch: int) -> tuple[float, float]:
 def channel_z_range(ch: int) -> tuple[float, float]:
     """21cm redshift interval covered by an ATSC channel (z_lo at upper edge)."""
     lo, hi = channel_edges(ch)
-    return NU_LINE / hi - 1.0, NU_LINE / lo - 1.0
+    return (HI_REST_FREQUENCY_MHZ / hi - 1.0,
+            HI_REST_FREQUENCY_MHZ / lo - 1.0)
 
 
 def measured_mask_fractions(rates_csv: str | Path = DEFAULT_RATES_CSV,
@@ -145,7 +148,7 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
     fractions, n_frames, rules = {}, {}, set()
     kernels, packages, seen = set(), set(), {}
     for p in paths:
-        d = np.load(p, allow_pickle=True)
+        d = load_npz(p)
         ch = int(d["physical_channel"][0])
         valid = d["valid"][:, 0].astype(bool)
         if stage == "coarse":

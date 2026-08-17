@@ -25,17 +25,14 @@ with K = 128 taps on the coarse grid and the same kernel read on the
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise.plots import (                              # noqa: E402
+from baonoise.plots import (
     GRID, INK, INK2, SERIES, _save, setup_style)
-import matplotlib.pyplot as plt                           # noqa: E402
+import matplotlib.pyplot as plt
 
 K = 128
 

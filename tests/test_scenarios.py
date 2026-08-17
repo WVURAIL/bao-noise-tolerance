@@ -1,10 +1,5 @@
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from baonoise import channels as chn
 from baonoise import scenarios
@@ -24,19 +19,19 @@ def test_clean_scenario():
 
 
 def test_uniform_time_mode():
-    sc = scenarios.uniform(0.5, "dtv")
+    sc = scenarios.uniform(0.5, scenarios.DTV_BAND)
     # bin fully inside the DTV band
     v, w = sc.bin_factors(500.0, 530.0)
     assert v == pytest.approx(1.0)
     assert w == pytest.approx(0.5)
     # fourier convention agrees for uniform masking
-    sc_f = scenarios.uniform(0.5, "dtv", mode="fourier")
+    sc_f = scenarios.uniform(0.5, scenarios.DTV_BAND, mode="fourier")
     v2, w2 = sc_f.bin_factors(500.0, 530.0)
     assert w2 == pytest.approx(0.5)
 
 
 def test_uniform_outside_dtv_band():
-    sc = scenarios.uniform(0.5, "dtv")
+    sc = scenarios.uniform(0.5, scenarios.DTV_BAND)
     v, w = sc.bin_factors(410.0, 440.0)   # below 470 MHz: clean
     assert v == 1.0 and w == 1.0
 
@@ -106,7 +101,7 @@ def test_hook_band_average_equals_bin_factors():
     reproduce Scenario.bin_factors' piecewise-exact w_bar."""
     sc = scenarios.measured()
     w = sc.freq_weight_fn()
-    nu_lo, nu_hi = 566.6, 591.4        # the z=1.40-1.51 bin
+    nu_lo, nu_hi = 566.6, 591.4        # representative ch30-overlap bin
     nn = np.linspace(nu_lo, nu_hi, 200001)
     ww = w(nn)
     surviving = np.isfinite(ww)
@@ -158,8 +153,7 @@ def test_scenario_rejects_invalid_mask_excision_thresholds(threshold):
         scenarios.Scenario("bad", "bad", excise_threshold=threshold)
 
 
-def test_threshold_above_one_compatibly_disables_excision():
-    """Existing callers using the old 1.01 idiom retain their behavior."""
+def test_threshold_above_one_disables_excision():
     sc = scenarios.Scenario(
         "kept", "kept", fractions={30: 1.0}, excise_threshold=1.01)
     assert not sc.is_excised(30)
@@ -187,7 +181,7 @@ def test_scenario_copies_and_normalises_inputs():
 def test_api_uniform_residual_mapping_is_validated_at_construction():
     from baonoise import api
 
-    with pytest.raises(ValueError, match=r"residuals\[30\]"):
+    with pytest.raises(ValueError, match="channel-specific"):
         api.scenario_from(uniform=0.2, residuals={30: np.nan})
 
 
@@ -202,29 +196,45 @@ def test_api_rejects_invalid_uniform_residual(residual):
 def test_uniform_excision_policies_are_explicit():
     kept = scenarios.uniform(0.8)
     thresholded = scenarios.uniform(0.8, excise_threshold=0.5)
-    forced = scenarios.uniform(0.8, excise=True)
-    assert not kept.is_excised(30)
-    assert thresholded.is_excised(30)
-    assert forced.is_excised(30)
-    with pytest.raises(ValueError, match="either excise=True"):
-        scenarios.uniform(0.8, excise=True, excise_threshold=0.5)
+    assert not kept.is_band_excised(scenarios.DTV_BAND)
+    assert thresholded.is_band_excised(scenarios.DTV_BAND)
+    with pytest.raises(TypeError, match="unexpected keyword argument 'excise'"):
+        scenarios.uniform(0.8, excise=True)
+
+
+def test_full_chime_band_is_a_physical_frequency_interval():
+    sc = scenarios.uniform(0.5, scenarios.CHIME_BAND)
+    assert sc.fractions == {}
+    assert sc.frequency_fractions == {scenarios.CHIME_BAND: 0.5}
+    assert sc.bin_factors(400.0, 800.0) == pytest.approx((1.0, 0.5))
+    weight = sc.freq_weight_fn()
+    assert weight(399.0)[0] == pytest.approx(1.0)
+    assert weight(500.0)[0] == pytest.approx(0.5)
+
+
+def test_uniform_rejects_string_band_aliases():
+    with pytest.raises(ValueError, match="FrequencyBand"):
+        scenarios.uniform(0.5, band="dtv")
 
 
 def test_uniform_label_reflects_residual_excision_policy():
     sc = scenarios.uniform(
         0.2, residual=2.0, residual_excise_threshold=1.0)
-    assert sc.is_excised(30)
+    assert sc.is_band_excised(scenarios.DTV_BAND)
     assert "excised" in sc.label
     assert "r=2" in sc.label
 
 
-def test_uniform_label_is_neutral_for_channel_dependent_residuals():
-    sc = scenarios.uniform(
-        0.2, residuals={30: 2.0}, residual_excise_threshold=1.0)
-    assert sc.is_excised(30)
-    assert not sc.is_excised(29)
-    assert sc.label == (
-        "20% uniform masked fraction, dtv band; channel-dependent residuals")
+def test_frequency_band_rejects_invalid_edges():
+    with pytest.raises(ValueError, match="frequency-band edges"):
+        scenarios.FrequencyBand("bad", 800.0, 400.0)
+
+
+def test_channel_and_frequency_band_masks_must_not_overlap():
+    with pytest.raises(ValueError, match="must not overlap"):
+        scenarios.Scenario(
+            "bad", "bad", fractions={30: 0.2},
+            frequency_fractions={scenarios.DTV_BAND: 0.2})
 
 
 # ----------------------------------------------------------------------

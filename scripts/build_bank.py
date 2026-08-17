@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Build the per-zbin Fisher bank over a grid of integration times."""
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from baonoise.fisherbank import build_bank  # noqa: E402
-from baonoise.resources import DEFAULT_BANK_NAME  # noqa: E402
+from baonoise.fisherbank import build_bank
+from baonoise.resources import BANK_NAMES
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -18,10 +16,11 @@ if __name__ == "__main__":
     ap.add_argument("--tmax", type=float, default=1e6, help="hours")
     ap.add_argument("--nproc", type=int, default=None)
     ap.add_argument("--epsilon-fg", type=float, default=1e-6)
-    ap.add_argument("--config", default="bull2015",
+    ap.add_argument("--config", default="chime2022",
                     choices=["bull2015", "chime2022"])
     ap.add_argument("--cosmology", default=None,
-                    help="chime2022 only: planck2018 (default) or pact2025")
+                    help="planck2013 for bull2015; planck2018 (default) or "
+                         "pact2025 for chime2022")
     ap.add_argument("--dense-knee", action="store_true",
                     help="add half-step t points through the CV knee")
     ap.add_argument("--knee-range", nargs=2, type=float, default=(3.5, 5.83),
@@ -56,15 +55,17 @@ if __name__ == "__main__":
     if args.kfg_fac is not None:
         ptag += f"_kfg{args.kfg_fac:g}"
     ktag = "_dense" if args.dense_knee else ""
-    default_name = (f"fisher_bank_chime2022{ctag}{ptag}{ktag}.npz"
-                    if args.config == "chime2022"
-                    else f"fisher_bank_chime{ptag}{ktag}.npz")
+    fg_tag = (f"{args.epsilon_fg:.0e}"
+              .replace("e-0", "e-").replace("e+0", "e+"))
+    default_name = (
+        f"fisher_bank_chime2022{ctag}{ptag}{ktag}.npz"
+        if args.config == "chime2022"
+        else f"fisher_bank_bull2015_planck2013_epsfg{fg_tag}{ptag}{ktag}.npz")
     if args.out:
         out = args.out
-    elif default_name == DEFAULT_BANK_NAME:
-        # A plain CHIME-2022 output belongs at the single package-data
-        # location that wheels and sdists distribute. The caller remains
-        # responsible for choosing the intended grid and scientific settings.
+    elif default_name in BANK_NAMES.values():
+        # Named CHIME-2022 cosmologies are package resources. The caller
+        # remains responsible for the intended grid and scientific settings.
         out = (Path(__file__).resolve().parents[1] / "src" / "baonoise" /
                "data" / default_name)
     else:

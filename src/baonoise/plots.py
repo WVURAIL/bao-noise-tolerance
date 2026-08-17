@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
-from matplotlib.patches import FancyBboxPatch, Patch
+from matplotlib.patches import Patch
 
 # ---------------------------------------------------------------- palette
 INK = "#0b0b0b"
@@ -147,17 +147,6 @@ def fig_required_time(fracs: np.ndarray, series: list[dict], outfile: Path,
     return _save(fig, outfile)
 
 
-def _rounded_bar(ax, x, height, width, color, rounding=0.012):
-    """Thin bar, square at the baseline, rounded at the data end (log-safe:
-    draws in axes-fraction-free data coords with small rounding pad)."""
-    r = min(rounding * height, width * 0.35)
-    patch = FancyBboxPatch(
-        (x - width / 2.0, 0.0), width, height,
-        boxstyle=f"round,pad=0,rounding_size={r}",
-        mutation_aspect=1.0, linewidth=0, facecolor=color)
-    ax.add_patch(patch)
-
-
 def fig_channel_masking(fractions: dict[int, float], excised: set[int],
                         outfile: Path):
     setup_style()
@@ -201,7 +190,10 @@ def fig_perbin_significance(zc: np.ndarray, curves: dict[str, np.ndarray],
     setup_style()
     fig, ax = plt.subplots(figsize=(7.2, 4.4))
     # shade the redshift range where ATSC DTV can contaminate (470-608 MHz)
-    z_dtv = (1420.406 / 608.0 - 1.0, 1420.406 / 470.0 - 1.0)
+    from .channels import ATSC_CH14_LOWER_EDGE, ATSC_DTV_UPPER_EDGE
+    from .constants import HI_REST_FREQUENCY_MHZ
+    z_dtv = (HI_REST_FREQUENCY_MHZ / ATSC_DTV_UPPER_EDGE - 1.0,
+             HI_REST_FREQUENCY_MHZ / ATSC_CH14_LOWER_EDGE - 1.0)
     ax.axvspan(z_dtv[0], z_dtv[1], color=GRID, alpha=0.45, zorder=0, lw=0)
     ax.text(0.5 * (z_dtv[0] + z_dtv[1]), 0.015, "ATSC DTV band",
             transform=ax.get_xaxis_transform(), ha="center", va="bottom",
@@ -214,8 +206,11 @@ def fig_perbin_significance(zc: np.ndarray, curves: dict[str, np.ndarray],
                 ms=ms, lw=1.6, markeredgecolor=SURFACE, markeredgewidth=1.5,
                 zorder=3 + k)
     sec = ax.secondary_xaxis(
-        "top", functions=(lambda z: 1420.406 / (1.0 + np.maximum(z, -0.99)),
-                          lambda nu: 1420.406 / np.maximum(nu, 1e-3) - 1.0))
+        "top", functions=(
+            lambda z: HI_REST_FREQUENCY_MHZ /
+            (1.0 + np.maximum(z, -0.99)),
+            lambda nu: HI_REST_FREQUENCY_MHZ /
+            np.maximum(nu, 1e-3) - 1.0))
     sec.set_xlabel("Frequency [MHz]", color=INK2)
     sec.tick_params(colors=MUTED, labelcolor=INK2)
     ax.set_xlabel("Redshift bin center")

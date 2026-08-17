@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Smoke test: import radiofisher on modern scipy, build the python-camb P(k)
-cache, run one per-bin Fisher matrix for CHIME, and time it."""
-import sys, time
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+"""Smoke test: load the Bull-2015 cache and run one Fisher bin."""
+import time
 
 from baonoise.compat import import_radiofisher
-from baonoise import pkcache, survey
+from baonoise import cosmologies, pkcache, survey
+from baonoise.resources import filesystem_data_file
 
 rf, rf_dir = import_radiofisher()
 print("radiofisher imported from", rf_dir)
 
-cache = Path(__file__).resolve().parents[1] / "data" / "cache_pk.dat"
+cache = filesystem_data_file("cache_pk.dat")
 t0 = time.time()
-cosmo = pkcache.load_fiducial_cosmology(rf, cache)
+base = cosmologies.with_astrophysical_profile(
+    rf.experiments.cosmo, "bull2015", rf=rf)
+cosmo = pkcache.load_fiducial_cosmology(rf, cache, cosmo=base)
 print(f"P(k) cache ready in {time.time()-t0:.1f}s; "
       f"k range {cosmo['k_in_min']:.2e}..{cosmo['k_in_max']:.2f} Mpc^-1")
 

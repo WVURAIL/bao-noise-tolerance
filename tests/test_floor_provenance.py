@@ -13,15 +13,10 @@ transmitter never stops still reports one if mu0 > 1.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from baonoise import residual                             # noqa: E402
+from baonoise import residual
 
 BELOW_DB = 11.3
 ENBW_HZ = 3051.7578125

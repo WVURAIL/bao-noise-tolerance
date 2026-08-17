@@ -1,5 +1,4 @@
-"""Generate the CHIME baseline-density file n(x) that RadioFisher's CHIME
-experiment expects (``array_config/nx_CHIME_800.dat``).
+"""Generate Bao-owned CHIME baseline-density files n(x).
 
 The original file was produced by ``process_chime_baselines.py`` from a raw
 baseline list that is not distributed with the repository (and the auxiliary
@@ -18,12 +17,30 @@ Processing recipe replicated exactly from process_chime_baselines.py:
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from scipy.spatial.distance import pdist
 
+from .constants import CHIME_FREQUENCY_MAX_MHZ
+
 C_MS = 3e8
+
+
+@dataclass(frozen=True)
+class CylinderLayout:
+    """Named geometry used to generate a baseline-density table."""
+    ncyl: int
+    nfeed: int
+    cyl_spacing_m: float
+    cyl_length_m: float
+    cylinder_width_m: float
+
+
+BULL2015_LAYOUT = CylinderLayout(5, 256, 20.0, 80.0, 20.0)
+CHIME_ASBUILT_LAYOUT = CylinderLayout(4, 256, 22.0, 78.0, 20.0)
+LAYOUTS = {"bull2015": BULL2015_LAYOUT, "asbuilt": CHIME_ASBUILT_LAYOUT}
 
 
 def chime_feed_positions(ncyl: int = 5, nfeed: int = 256, cyl_spacing: float = 20.0,
@@ -43,7 +60,8 @@ def fov_cyl(nu_mhz: float, ddish: float) -> float:
 
 def build_nx_file(outfile: str | Path, ncyl: int = 5, nfeed: int = 256,
                   cyl_spacing: float = 20.0, cyl_length: float = 80.0,
-                  ddish: float = 20.0, nu_mhz: float = 800.0,
+                  ddish: float = 20.0,
+                  nu_mhz: float = CHIME_FREQUENCY_MAX_MHZ,
                   dcut: float | None = None) -> Path:
     """Compute n(x) for the cylinder layout and write the RadioFisher file."""
     outfile = Path(outfile)
@@ -70,26 +88,28 @@ def build_nx_file(outfile: str | Path, ncyl: int = 5, nfeed: int = 256,
     return outfile
 
 
-def ensure_chime_nx(rf_dir: str | Path, data_dir: str | Path,
+def ensure_chime_nx(data_dir: str | Path,
                     layout: str = "bull2015") -> Path:
-    """Return path to a CHIME n(x) file, generating it if needed.
+    """Return a Bao-owned CHIME n(x) path, generating it if needed.
 
     layout='bull2015'  : 5 cyl x 256 feeds, 80 m  (RadioFisher paper spec)
     layout='asbuilt'   : 4 cyl x 256 feeds, 22 m spacing, 78 m instrumented
+
+    RadioFisher's historical root-level ``array_config`` directory is not an
+    input. Forecast adapters bind Bull-2015 explicitly to Bao's packaged
+    synthetic table, so an unrelated checkout file cannot change the science.
     """
-    rf_official = Path(rf_dir) / "array_config" / "nx_CHIME_800.dat"
-    if layout == "bull2015" and rf_official.exists():
-        return rf_official
+    if layout not in LAYOUTS:
+        raise ValueError(f"unknown layout: {layout}; choose from {sorted(LAYOUTS)}")
     data_dir = Path(data_dir)
+    spec = LAYOUTS[layout]
     if layout == "bull2015":
         out = data_dir / "nx_CHIME_800_synth.dat"
-        if not out.exists():
-            build_nx_file(out)
-    elif layout == "asbuilt":
-        out = data_dir / "nx_CHIME_800_asbuilt.dat"
-        if not out.exists():
-            build_nx_file(out, ncyl=4, nfeed=256, cyl_spacing=22.0,
-                          cyl_length=78.0)
     else:
-        raise ValueError(f"unknown layout: {layout}")
+        out = data_dir / "nx_CHIME_800_asbuilt.dat"
+    if not out.exists():
+        build_nx_file(
+            out, ncyl=spec.ncyl, nfeed=spec.nfeed,
+            cyl_spacing=spec.cyl_spacing_m, cyl_length=spec.cyl_length_m,
+            ddish=spec.cylinder_width_m)
     return out

@@ -34,6 +34,8 @@ def test_shared_driver_path_imports_radiofisher(monkeypatch):
     class SharedBank:
         def __init__(self):
             self.meta = {"config": "bull2015"}
+            self.artifact_kind = "forecast"
+            self.paramnames = ()
 
     backend = object()
     monkeypatch.setattr(run_forecast, "FisherBank", lambda _path: SharedBank())

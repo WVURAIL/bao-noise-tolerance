@@ -34,6 +34,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .npzio import load_npz
+
 FRAME_SECONDS = 16384 * 2.56e-6           # 41.94304 ms, upgraded backend
 MAD_TO_SIGMA = 1.4826
 DEFAULT_MAD_K = 1.8                       # CHIME overview paper, sec 3.2.3
@@ -212,7 +214,7 @@ def compare_flaggers(npz_path, mad_k: float = DEFAULT_MAD_K,
     the incumbents are scored on ground they can actually stand on. Returns
     ``(results, meta)``.
     """
-    d = np.load(npz_path, allow_pickle=True)
+    d = load_npz(npz_path)
     lin, floor_db = shelf_per_frame(d)
     valid = d["valid"][:, 0].astype(bool)
     power = d["baseband_power_linear"][:, 0].astype(float)

@@ -22,17 +22,14 @@ fig_hypothesis_bank  All 256 chains' resultants at once, which is what the
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise.plots import (                              # noqa: E402
+from baonoise.plots import (
     BASELINE, GRID, INK, INK2, MUTED, SERIES, SURFACE, _save, setup_style)
-import matplotlib.pyplot as plt                           # noqa: E402
+import matplotlib.pyplot as plt
 
 L, LF = 128, 256          # windows per frame, padded fine bins
 DELTA = 37.6 / LF         # off-grid rotation, cycles per window

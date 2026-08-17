@@ -24,17 +24,14 @@ bin on each side.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise.plots import (                              # noqa: E402
+from baonoise.plots import (
     INK, INK2, MUTED, SERIES, _save, setup_style)
-import matplotlib.pyplot as plt                           # noqa: E402
+import matplotlib.pyplot as plt
 
 DF_PILOT = 177.0 / 572.0        # MHz above the lower allocation edge
 ALLOC = 6.0                     # MHz
