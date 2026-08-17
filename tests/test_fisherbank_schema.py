@@ -113,6 +113,26 @@ def test_scientific_source_digest_is_checkout_newline_independent(tmp_path):
     assert lf_digest == crlf_digest
 
 
+def test_scientific_source_digest_survives_committing_a_deletion(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    source = tmp_path / "model.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "model.py"], check=True)
+    manifest = {"include": ("*.py",), "exclude": ()}
+
+    source.unlink()
+    unstaged_deletion = fisherbank._git_state(
+        tmp_path, **manifest)["working_tree_sha256"]
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "rm", "--cached", "model.py"],
+        check=True, capture_output=True)
+    committed_tree = fisherbank._git_state(
+        tmp_path, **manifest)["working_tree_sha256"]
+
+    assert unstaged_deletion == committed_tree
+
+
 def test_schema_one_bank_requires_regeneration(tmp_path):
     def mutate(_arrays, meta):
         meta["schema_version"] = 1

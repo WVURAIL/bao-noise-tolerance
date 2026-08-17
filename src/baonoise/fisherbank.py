@@ -242,6 +242,10 @@ def _git_state(path: Path, *, include: tuple[str, ...] = (),
                 continue
             source = path / relative
             try:
+                if not source.exists() and not source.is_symlink():
+                    # An unstaged deletion is the same scientific source tree
+                    # as that deletion after it is staged and committed.
+                    continue
                 if source.is_symlink():
                     content = os.fsencode(os.readlink(source))
                     kind = b"symlink"

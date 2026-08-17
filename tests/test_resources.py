@@ -18,15 +18,15 @@ from baonoise.fisherbank import (ARTIFACT_FORECAST, BANK_SCHEMA_VERSION,
 
 EXPECTED_SHA256 = {
     resources.DEFAULT_BANK_NAME:
-        "9a872c1214a700035c03ed7734d41dce841cbdd7cccabdfc3d462c8668788c4c",
+        "43f5e600db639baf3e7785c71076909cc9dbcc235756c816e877522357a3004c",
     resources.PACT2025_BANK_NAME:
-        "c560d067e5aa9bde7335cd03f65613c2c99646a3104ddfcaa2053ad1aad42e4e",
+        "33908c44063f7d876e80980ed725890f06b0bde74b7d6ee7f5977db2c544d095",
     resources.DEFAULT_RATES_NAME:
         "da8c1c1df1f3929920ac132ea037adaa7cad5f5edb215e046ec5a40281d6bde3",
     resources.PRODUCTS_MANIFEST_NAME:
         "cede0afd1dd7e79bac8f94d198645081fc014cb07eead3ca26e6128c3fbeb165",
     resources.SYNTHETIC_BASELINE_NAME:
-        "93905c78a2ec2279dc718179cd0efae775ce7d95fa9b6a88846fd3065d13c31a",
+        "101a156d88c212781b098f89a86bfb11ada58433d5dcc5cc2fb86956c930790b",
     "cache_pk.dat":
         "c33b7e8e9b5e5abff63476e518a0a4376ac1a5043aa32a811e037dce5c81506f",
     "cache_pk_chime2022.dat":
@@ -34,15 +34,18 @@ EXPECTED_SHA256 = {
     "cache_pk_chime2022_pact2025.dat":
         "f7bdfdc9c241864432b888b670cc99a03d961c164e4e27a0c37e43b08c16e708",
 }
-CANONICAL_TEXT_RESOURCES = frozenset({resources.DEFAULT_RATES_NAME})
+CANONICAL_TEXT_RESOURCES = frozenset({
+    resources.DEFAULT_RATES_NAME,
+    resources.SYNTHETIC_BASELINE_NAME,
+})
 BULL_BANK_SHA256 = {
     "fisher_bank_bull2015_planck2013_epsfg1e-6.npz":
-        "1aa1c062aea505eb00db400e162a00ea18460c6454fefbbb6f5711a0ed1c0bc2",
+        "9b5a9627be86201ac2826efd9a4dd89d30dc4d811a1dea368aacbf573f1219ca",
     "fisher_bank_bull2015_planck2013_epsfg1e-5.npz":
-        "d4ad3d657d85a382f0c5d28e91810b364a1af12114d02ba82339ec7fad114067",
+        "0b566c692263ee7ef2ffe0f62faf1f0e6069d0066d95a030cde94684ab3438ee",
 }
 EXPECTED_RADIOFISHER_SOURCE_SHA256 = (
-    "e75beb6f4181c82c13f19139d261a7576924ee53b6b3bbfb02c3874c257bcfd2"
+    "efad0173be49d51679cf98071ccd1dfccd386dc9b2774e202164086347a4c2cf"
 )
 
 
@@ -50,8 +53,8 @@ def _sha256(resource, canonical_text: bool = False) -> str:
     with resource.open("rb") as stream:
         data = stream.read()
     if canonical_text:
-        # The scientific CSV content is independent of the checkout's newline
-        # convention.  .gitattributes enforces LF for future checkouts, while
+        # Scientific text content is independent of the checkout's newline
+        # convention. .gitattributes enforces LF for future checkouts, while
         # this normalization also handles an already-populated Windows tree.
         data = data.replace(b"\r\n", b"\n")
     return hashlib.sha256(data).hexdigest()
@@ -291,7 +294,7 @@ def test_built_wheel_contains_and_loads_named_banks_and_manifest(tmp_path):
     wheel_dir.mkdir()
     built = subprocess.run(
         [sys.executable, "-m", "pip", "wheel", "--no-deps",
-         "--no-build-isolation", "--wheel-dir", str(wheel_dir), str(root)],
+         "--wheel-dir", str(wheel_dir), str(root)],
         cwd=tmp_path, text=True, capture_output=True, check=False)
     assert built.returncode == 0, built.stdout + built.stderr
     wheel = next(wheel_dir.glob("baonoise-*.whl"))
