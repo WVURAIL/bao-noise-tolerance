@@ -16,18 +16,14 @@ null widths.
     python3 scripts/curvature_study.py
 """
 from __future__ import annotations
-from pathlib import Path
 import numpy as np
-
-ROOT = Path(__file__).resolve().parents[1]
 DF = 390.625e3 / 16384            # 23.84 Hz per spectrum bin
 DELTA = 2 * 390.625e3 / 128       # 6.104 kHz reference distance
 WIN = 390.625e3 / 128             # 3.05 kHz window integration width
 FIT_IN, FIT_OUT = 5e3, 12e3       # fit annulus: past the cluster, local
 
-import sys
-sys.path.insert(0, str(ROOT / "src"))
-from baonoise import products as P                        # noqa: E402
+from baonoise import products as P
+from baonoise.npzio import load_npz
 PRODUCTS = P.paths()
 
 
@@ -40,7 +36,7 @@ def main():
           "   (fractions of local background)")
     res = []
     for ch, p in sorted(PRODUCTS.items()):
-        d = np.load(p, allow_pickle=True)
+        d = load_npz(p)
         s = d["integrated_spectrum_before_mask"].astype(float)
         dfhz = (float(d["pilot_frequency_hz"][0])
                 - float(d["chime_frequency_hz"][0]))

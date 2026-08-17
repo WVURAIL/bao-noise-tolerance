@@ -28,18 +28,15 @@ frames, ch36 keeps 34, and their r values are bounds from starved estimates.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise import residual as R                        # noqa: E402
-from baonoise.plots import (                              # noqa: E402
+from baonoise import residual as R
+from baonoise.plots import (
     CRITICAL, GRID, INK, INK2, MUTED, SERIES, SURFACE, _save, setup_style)
-import matplotlib.pyplot as plt                           # noqa: E402
+import matplotlib.pyplot as plt
 
 # Stable zeta = 1 tolerances on the binding dilation, alpha_perp, per z bin
 # (scripts/bias_tolerance.py --zeta 1.0, unrefused entries).
@@ -50,7 +47,8 @@ TOL_APERP = {27: 0.014, 28: 0.014, 29: 0.014, 30: 0.0144, 31: 0.0156, 32: 0.0156
 FS8_REL = (0.00156 / 0.0352, 0.00153 / 0.0156)     # (0.044, 0.098)
 
 FINE_DB = 10.0                                     # measured 9.4-10.0
-from baonoise import products as P                 # noqa: E402
+from baonoise import products as P
+from baonoise.npzio import load_npz
 PATHS = P.paths(channels=sorted(TOL_APERP))
 # Verdict classes: the three threshold-feasible channels in full color, the
 # tau_c-hostage marginal in its own color, the occupancy-pinned five in gray.
@@ -79,7 +77,7 @@ def channel_curve(ch, p):
 def era_point(path, year_from, floor_db, gain):
     """f at eta = 1 restricted to an era, at the same floor and gain."""
     import datetime as dt
-    d = np.load(path, allow_pickle=True)
+    d = load_npz(path)
     v = d["valid"][:, 0].astype(bool)
     rej = d["reject_mask"][:, 0].astype(bool)
     t = d["unit_time0_ctime"][d["frame_unit_index"]]

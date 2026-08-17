@@ -18,7 +18,10 @@ import numpy as np
 from scipy.optimize import brentq
 
 from . import survey
-from .fisherbank import FisherBank
+from ._validation import (finite_scalar as _finite_scalar,
+                          nonnegative_scalar as _nonnegative_finite_scalar,
+                          positive_scalar as _positive_finite_scalar)
+from .fisherbank import ARTIFACT_FORECAST, BIAS_PARAMETER, FisherBank
 from .scenarios import Scenario
 
 EXCLUDE = ["Tb", "sigma8tot", "n_s", "fs8", "bs8", "pk"]
@@ -40,31 +43,6 @@ FORECAST_STYLES = frozenset({"shared_A", "perbin_A"})
 # committed banks in their canonical forecast styles (O(1e6) or better).
 FISHER_CONDITION_LIMIT = 1e12
 FISHER_NULLSPACE_RTOL = np.sqrt(np.finfo(float).eps)
-
-
-def _finite_scalar(value, name: str) -> float:
-    """Return *value* as a finite scalar, with a useful public-API error."""
-    try:
-        out = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{name} must be a finite scalar") from exc
-    if not np.isfinite(out):
-        raise ValueError(f"{name} must be a finite scalar")
-    return out
-
-
-def _positive_finite_scalar(value, name: str) -> float:
-    out = _finite_scalar(value, name)
-    if out <= 0.0:
-        raise ValueError(f"{name} must be greater than zero")
-    return out
-
-
-def _nonnegative_finite_scalar(value, name: str) -> float:
-    out = _finite_scalar(value, name)
-    if out < 0.0:
-        raise ValueError(f"{name} must be greater than or equal to zero")
-    return out
 
 
 def _time_bracket(t_lo, t_hi) -> tuple[float, float]:
@@ -148,6 +126,18 @@ class Forecast:
                 "shared_A forecasts require a RadioFisher backend; pass the "
                 "imported radiofisher module as rf"
             )
+        if BIAS_PARAMETER in getattr(bank, "paramnames", ()):
+            raise ValueError(
+                f"{BIAS_PARAMETER} is a residual-bias response row, not a "
+                "forecast parameter; use the dedicated bias workflow")
+        bank_kind = bank.artifact_kind
+        if bank_kind != ARTIFACT_FORECAST:
+            raise ValueError(
+                f"bank artifact_kind={bank_kind!r}; Forecast requires "
+                f"{ARTIFACT_FORECAST!r}")
+        if rf is not None and getattr(rf, "__file__", None):
+            from .compat import bind_radiofisher
+            rf_dir = bind_radiofisher(rf, rf_dir)
         self.bank = bank
         self.rf = rf
         self.rf_dir = rf_dir
@@ -257,10 +247,14 @@ class Forecast:
         return float(10.0 ** logt)
 
     def required_years(self, scenario: Scenario, target: float = 5.0,
-                       duty: float = 0.75) -> float:
+                       duty: float = 1.0,
+                       hours_per_year: float = survey.MEAN_CALENDAR_YEAR_HOURS) -> float:
         duty = _positive_finite_scalar(duty, "duty")
+        hours_per_year = _positive_finite_scalar(
+            hours_per_year, "hours_per_year")
         h = self.required_hours(scenario, target)
-        return float(survey.hours_to_years(h, duty)) if np.isfinite(h) else np.inf
+        return (float(survey.hours_to_years(h, duty, hours_per_year))
+                if np.isfinite(h) else np.inf)
 
     # ------------------------------------------------------------------
     def sigma_A_direct(self, scenario: Scenario, t_hours: float,
@@ -278,8 +272,9 @@ class Forecast:
         import contextlib
         import io
 
-        from . import pkcache, survey
-        from .compat import find_radiofisher_dir, import_radiofisher
+        from . import cosmologies, pkcache, survey
+        from .compat import (DIRECT_MASK_CAPABILITIES, bind_radiofisher,
+                             import_radiofisher, require_backend_capabilities)
 
         rf = self.rf
         requested_rf_dir = rf_dir if rf_dir is not None else self.rf_dir
@@ -292,26 +287,62 @@ class Forecast:
                     "checkout; set RADIOFISHER_DIR or pass rf_dir"
                 ) from exc
         else:
-            rf_dir = find_radiofisher_dir(requested_rf_dir)
-        cfg = self.bank.meta.get("config", "bull2015")
-        if cosmo is None or cosmo_fns is None:
-            from pathlib import Path
-            data = Path(__file__).resolve().parents[2] / "data"
+            rf_dir = bind_radiofisher(rf, requested_rf_dir)
+        require_backend_capabilities(
+            rf, DIRECT_MASK_CAPABILITIES, rf_dir=rf_dir)
+        cfg = self.bank.meta["config"]
+        cosmology_name = self.bank.meta["cosmology"]
+        recorded_profile = self.bank.meta["astrophysical_model_profile"]
+        if cosmo is None and cosmo_fns is not None:
+            raise ValueError("cosmo_fns cannot be supplied without cosmo")
+        if cosmo is not None:
+            if recorded_profile not in {"bull2015", "chime_overview_2022"}:
+                raise ValueError(
+                    "direct validation requires a recorded canonical "
+                    "astrophysical_model_profile")
+            cosmo = cosmologies.with_explicit_physical_densities(
+                cosmologies.with_astrophysical_profile(
+                    cosmo, recorded_profile, rf=rf))
+            # Resolving an authoritative physical-density triplet can change
+            # mnu/omega_cdm_0/omega_nu_0. Never reuse splines built from the
+            # caller's pre-resolution dictionary.
+            cosmo_fns = rf.background_evolution_splines(cosmo)
+        if cosmo is None:
+            from .resources import filesystem_data_file
             if cfg == "chime2022":
+                ctag = (f"_{cosmology_name}"
+                        if cosmology_name != "planck2018" else "")
                 cosmo = pkcache.load_fiducial_cosmology(
-                    rf, data / "cache_pk_chime2022.dat",
-                    cosmo=survey.chime2022_cosmo(rf, rf_dir))
+                    rf, filesystem_data_file(
+                        f"cache_pk_chime2022{ctag}.dat"),
+                    cosmo=cosmologies.get(cosmology_name, rf, rf_dir))
+            elif cfg == "bull2015" and cosmology_name == "planck2013":
+                if recorded_profile != "bull2015":
+                    raise ValueError(
+                        "direct validation of a Bull-2015 bank requires its "
+                        "canonical HI signal profile")
+                base_cosmo = cosmologies.with_astrophysical_profile(
+                    rf.experiments.cosmo, "bull2015", rf=rf)
+                cosmo = pkcache.load_fiducial_cosmology(
+                    rf, filesystem_data_file("cache_pk.dat"),
+                    cosmo=base_cosmo)
             else:
-                cosmo = pkcache.load_fiducial_cosmology(rf, data / "cache_pk.dat")
+                raise ValueError(
+                    f"unsupported direct-validation configuration: "
+                    f"config={cfg!r}, cosmology={cosmology_name!r}")
             cosmo_fns = rf.background_evolution_splines(cosmo)
 
         factors = scenario.bin_factors_for_zbins(self.bank.zs)
         wfn = scenario.freq_weight_fn()
         F_list = []
-        for i, (v_frac, _w_bar) in enumerate(factors):
+        for i, (v_frac, w_bar) in enumerate(factors):
             if bins is not None and i not in bins:
                 continue
-            if v_frac <= V_FRAC_MIN:
+            # A retained slice with zero clean-time weight carries exactly no
+            # Fisher information. Skip it just as the bank path evaluates
+            # F(t=0), rather than sending a forbidden zero weight through the
+            # backend's strictly-positive noise-frequency contract.
+            if v_frac <= V_FRAC_MIN or w_bar <= 0.0:
                 continue
             if cfg == "chime2022":
                 expt = survey.chime2022_experiment(rf, rf_dir,
@@ -324,7 +355,10 @@ class Forecast:
             with contextlib.redirect_stdout(io.StringIO()):
                 F, names = rf.fisher(self.bank.zs[i], self.bank.zs[i + 1],
                                      cosmo, expt, cosmo_fns)
-            assert list(names) == list(self.bank.paramnames)
+            if list(names) != list(self.bank.paramnames):
+                raise RuntimeError(
+                    "RadioFisher parameter schema does not match the bank: "
+                    f"bank={list(self.bank.paramnames)}, direct={list(names)}")
             F_list.append(np.asarray(F))
         return self._sigma_A_from_list(F_list)
 

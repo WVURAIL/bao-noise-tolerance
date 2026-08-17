@@ -35,15 +35,12 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
-import sys
 from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise import residual as R                        # noqa: E402
+from baonoise import residual as R
 
 # Stable zeta = 1 tolerances (scripts/bias_tolerance.py --zeta 1.0).
 # per channel, from the stable zeta=1 entries of the channel's z bin:
@@ -58,7 +55,8 @@ DEPLOYED_DELAY_DB = 11.4             # CHIME's 200 ns cut; NOT booked in the
                                      # verdicts; shown as a labeled scenario.
 PLATEAU = 1.02                       # "within 2% of optimal" tie-break window
 
-from baonoise import products as _products               # noqa: E402
+from baonoise import products as _products
+from baonoise.npzio import load_npz
 
 DEFAULT_PRODUCTS = _products.paths()
 
@@ -70,7 +68,7 @@ ETAS = np.unique(np.concatenate([
 
 
 def recent_f(path, eta, mu0, year_from):
-    d = np.load(path, allow_pickle=True)
+    d = load_npz(path)
     v = d["valid"][:, 0].astype(bool)
     F = d["fstat_raw"][:, 0]
     t = d["unit_time0_ctime"][d["frame_unit_index"]]
@@ -85,7 +83,7 @@ def optimize(path, ch):
     prov = R.floor_provenance(path)
     corr = R.correlation_time(path)
     tol = TOL_APERP[ch]
-    d = np.load(path, allow_pickle=True)
+    d = load_npz(path)
     t = d["unit_time0_ctime"]
     yr_max = dt.datetime.utcfromtimestamp(float(t.max())).year
     era_from = max(yr_max - 2, 2018)

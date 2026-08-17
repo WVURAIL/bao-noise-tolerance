@@ -1,13 +1,10 @@
 """Safety checks for Fisher marginalisation and forecast inputs."""
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from baonoise.forecast import Forecast
 
@@ -18,6 +15,7 @@ class _Bank:
         self.paramnames = list(names)
         self.zs = np.array([0.8, 0.9])
         self.nbins = 1
+        self.artifact_kind = "forecast"
 
     def F(self, ibin, t_hours):
         assert ibin == 0
@@ -49,7 +47,7 @@ def _forecast(matrix, names=("A", "sigma_NL"), style="perbin_A"):
 
 def test_invalid_marginalisation_style_is_rejected():
     with pytest.raises(ValueError, match="style must be one of"):
-        _forecast(np.eye(2), style="legacy")
+        _forecast(np.eye(2), style="unsupported")
 
 
 def test_perbin_forecast_does_not_require_radiofisher_backend():
@@ -90,6 +88,149 @@ def test_direct_forecast_reuses_stored_radiofisher_path(monkeypatch):
 
     monkeypatch.setattr("baonoise.compat.find_radiofisher_dir", observe_lookup)
     with pytest.raises(LookupObserved):
+        fc.sigma_A_direct(SCENARIO, 1.0)
+
+
+def test_direct_forecast_uses_bank_cosmology_and_matching_cache(monkeypatch):
+    from baonoise.scenarios import clean
+
+    class Backend:
+        def background_evolution_splines(self, cosmo):
+            assert cosmo == {"loaded": "pact"}
+            return (object(),) * 4
+
+        def fisher(self, _zlo, _zhi, cosmo, expt, _fns):
+            assert cosmo == {"loaded": "pact"}
+            assert expt["noise_freq_mode"] == "invvar"
+            return np.eye(2), ["A", "sigma_NL"]
+
+    bank = _Bank(np.eye(2), ["A", "sigma_NL"])
+    bank.meta = {"config": "chime2022", "cosmology": "pact2025",
+                 "astrophysical_model_profile": "chime_overview_2022"}
+    backend = Backend()
+    fc = Forecast(bank, backend, style="perbin_A", rf_dir=Path("/rf"))
+    seen = {}
+    monkeypatch.setattr("baonoise.compat.bind_radiofisher",
+                        lambda rf, explicit=None: Path("/rf"))
+    monkeypatch.setattr("baonoise.compat.require_backend_capabilities",
+                        lambda *args, **kwargs: frozenset())
+
+    def get_cosmology(name, rf, rf_dir):
+        seen["name"] = name
+        return {"requested": name}
+
+    def load_cosmology(rf, cachefile, cosmo=None, **_kwargs):
+        seen["cache"] = Path(cachefile).name
+        seen["cosmo"] = cosmo
+        return {"loaded": "pact"}
+
+    monkeypatch.setattr("baonoise.cosmologies.get", get_cosmology)
+    monkeypatch.setattr("baonoise.pkcache.load_fiducial_cosmology",
+                        load_cosmology)
+    monkeypatch.setattr("baonoise.survey.chime2022_experiment",
+                        lambda rf, rf_dir, ttot_hours: {})
+    assert fc.sigma_A_direct(clean(), 1.0) == pytest.approx(1.0)
+    assert seen == {"name": "pact2025",
+                    "cache": "cache_pk_chime2022_pact2025.dat",
+                    "cosmo": {"requested": "pact2025"}}
+
+
+def test_direct_custom_cosmology_applies_the_banks_recorded_profile(monkeypatch):
+    from baonoise.scenarios import clean
+
+    class Backend:
+        @staticmethod
+        def with_astrophysical_profile(cosmo, profile):
+            assert profile == "bull2015"
+            return dict(
+                cosmo, astrophysical_model_profile=profile,
+                Tb_model="powerlaw", bias_HI_model="powerlaw",
+                omega_HI_model="powerlaw")
+
+        @staticmethod
+        def background_evolution_splines(cosmo):
+            assert cosmo["mnu"] == pytest.approx(0.09304)
+            return ("resolved-background",)
+
+        @staticmethod
+        def fisher(_zlo, _zhi, cosmo, _expt, cosmo_fns):
+            assert cosmo_fns == ("resolved-background",)
+            assert cosmo["astrophysical_model_profile"] == "bull2015"
+            assert {cosmo[key] for key in
+                    ("Tb_model", "bias_HI_model", "omega_HI_model")} \
+                == {"powerlaw"}
+            return np.eye(2), ["A", "sigma_NL"]
+
+    bank = _Bank(np.eye(2), ["A", "sigma_NL"])
+    bank.meta = {
+        "config": "bull2015", "cosmology": "planck2013",
+        "astrophysical_model_profile": "bull2015"}
+    fc = Forecast(bank, Backend(), style="perbin_A", rf_dir=Path("/rf"))
+    monkeypatch.setattr("baonoise.compat.bind_radiofisher",
+                        lambda rf, explicit=None: Path("/rf"))
+    monkeypatch.setattr("baonoise.compat.require_backend_capabilities",
+                        lambda *args, **kwargs: frozenset())
+    monkeypatch.setattr("baonoise.survey.chime_experiment",
+                        lambda rf, rf_dir, ttot_hours: {})
+    custom = {
+        "h": 0.7, "omega_M_0": 0.3, "omega_b_0": 0.05,
+        "mnu": 3.0, "ns": 0.96, "sigma_8": 0.8,
+        "ombh2": 0.0245, "omch2": 0.1225, "omnuh2": 0.001}
+    assert fc.sigma_A_direct(
+        clean(), 1.0, cosmo=custom,
+        cosmo_fns=("matching-background",)) == pytest.approx(1.0)
+
+
+def test_direct_full_mask_skips_zero_weight_bins(monkeypatch):
+    from baonoise.scenarios import DTV_BAND, uniform
+
+    class Backend:
+        @staticmethod
+        def with_astrophysical_profile(cosmo, profile):
+            return dict(
+                cosmo, astrophysical_model_profile=profile,
+                Tb_model="hall", bias_HI_model="castorina",
+                omega_HI_model="crighton")
+
+        @staticmethod
+        def background_evolution_splines(_cosmo):
+            return ("resolved-background",)
+
+        @staticmethod
+        def fisher(*_args, **_kwargs):
+            raise AssertionError("zero-information bin reached the backend")
+
+    bank = _Bank(np.eye(2), ["A", "sigma_NL"])
+    bank.zs = np.array([1.4, 1.5])  # wholly inside the measured DTV band
+    bank.meta = {
+        "config": "chime2022", "cosmology": "planck2018",
+        "astrophysical_model_profile": "chime_overview_2022"}
+    fc = Forecast(bank, Backend(), style="perbin_A", rf_dir=Path("/rf"))
+    monkeypatch.setattr("baonoise.compat.bind_radiofisher",
+                        lambda rf, explicit=None: Path("/rf"))
+    monkeypatch.setattr("baonoise.compat.require_backend_capabilities",
+                        lambda *args, **kwargs: frozenset())
+    custom = {
+        "h": 0.7, "omega_M_0": 0.3, "omega_b_0": 0.05,
+        "mnu": 0.0, "ns": 0.96, "sigma_8": 0.8}
+    scenario = uniform(1.0, band=DTV_BAND)
+    assert np.isinf(fc.sigma_A(scenario, 1.0))
+    assert np.isinf(fc.sigma_A_direct(
+        scenario, 1.0, cosmo=custom, cosmo_fns=("background",)))
+
+
+def test_direct_forecast_fails_closed_on_missing_backend_capability(monkeypatch):
+    bank = _Bank(np.eye(2), ["A", "sigma_NL"])
+    bank.meta = {"config": "chime2022", "cosmology": "planck2018"}
+    fc = Forecast(bank, object(), style="perbin_A", rf_dir=Path("/rf"))
+    monkeypatch.setattr("baonoise.compat.bind_radiofisher",
+                        lambda rf, explicit=None: Path("/rf"))
+
+    def reject(*_args, **_kwargs):
+        raise RuntimeError("lacks required capability(s): vol_frac")
+
+    monkeypatch.setattr("baonoise.compat.require_backend_capabilities", reject)
+    with pytest.raises(RuntimeError, match="vol_frac"):
         fc.sigma_A_direct(SCENARIO, 1.0)
 
 

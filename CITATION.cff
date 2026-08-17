@@ -2,7 +2,10 @@ cff-version: 1.2.0
 message: "If you use this software in your research, please cite it as below."
 title: "bao-noise-tolerance: Baryon Acoustic Oscillation Noise Tolerance Analysis"
 authors:
-  - name: "WVU Radio Astronomy Instrumentation Lab"
-    website: "https://github.com/WVURAIL"
+  - family-names: "Gormley"
+    given-names: "Dylan"
+    affiliation: "WVU Radio Astronomy Instrumentation Lab"
+version: "1.0.0"
+date-released: "2026-08-16"
 repository-code: "https://github.com/WVURAIL/bao-noise-tolerance"
 license: "MIT"

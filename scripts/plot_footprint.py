@@ -16,20 +16,18 @@ leverage and it is easier to see than to describe, so it gets a figure.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
-import numpy as np
-
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
-import matplotlib                                      # noqa: E402
+import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt                        # noqa: E402
-from matplotlib.patches import Rectangle               # noqa: E402
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
-from baonoise import channels as chn                   # noqa: E402
+from baonoise import channels as chn
+from baonoise.constants import (CHIME_COARSE_CHANNEL_COUNT,
+                                CHIME_FREQUENCY_MAX_MHZ,
+                                CHIME_FREQUENCY_MIN_MHZ,
+                                HI_REST_FREQUENCY_MHZ)
 
 # Same validated categorical slots as the residual figure:
 #   node scripts/validate_palette.js "#2a78d6,#eb6834" --pairs all
@@ -38,10 +36,11 @@ PROTECTED, MONITORED = "#2a78d6", "#eb6834"
 INK, INK2, MUTED = "#0b0b0b", "#52514e", "#8a8983"
 GRID, SURFACE = "#e6e5e1", "#fcfcfb"
 
-FS = 400.0 / 1024          # CHIME coarse channel width, MHz
-NU_LINE = chn.NU_LINE
+FS = ((CHIME_FREQUENCY_MAX_MHZ - CHIME_FREQUENCY_MIN_MHZ)
+      / CHIME_COARSE_CHANNEL_COUNT)
 ATSC_GUARD = 0.31          # MHz, allocation edge to payload edge
 ATSC_PAYLOAD = 5.38        # MHz, RRC Nyquist passband
+PILOT_TO_SHELF_INTEGRATED_RATIO = 13.4
 
 
 def style():
@@ -69,11 +68,11 @@ def style():
 
 def bin_index(nu):
     """CHIME coarse-channel index whose centre is nearest nu (MHz)."""
-    return int(round((800.0 - nu) / FS))
+    return int(round((CHIME_FREQUENCY_MAX_MHZ - nu) / FS))
 
 
 def bin_center(idx):
-    return 800.0 - idx * FS
+    return CHIME_FREQUENCY_MAX_MHZ - idx * FS
 
 
 def panel_allocation(ax, ch=35):
@@ -88,7 +87,8 @@ def panel_allocation(ax, ch=35):
            if bin_center(i) + FS / 2 > lo and bin_center(i) - FS / 2 < hi]
 
     shelf_h = 1.0                      # per-bin shelf, arbitrary linear units
-    pilot_h = shelf_h * (6.0 / FS) / 13.4    # pilot power in its own bin
+    pilot_h = (shelf_h * (chn.ATSC_WIDTH / FS)
+               / PILOT_TO_SHELF_INTEGRATED_RATIO)
 
     for i in idx:
         c = bin_center(i)
@@ -120,7 +120,7 @@ def panel_allocation(ax, ch=35):
     ax.set_ylim(0, 2.35)
     ax.set_yticks([])
     ax.set_xlabel(f"frequency [MHz], ATSC channel {ch} allocation, "
-                  f"{6.0 / FS:.2f} CHIME coarse channels")
+                  f"{chn.ATSC_WIDTH / FS:.2f} CHIME coarse channels")
     for s in ("top", "right", "left"):
         ax.spines[s].set_visible(False)
 
@@ -128,7 +128,8 @@ def panel_allocation(ax, ch=35):
     zax.set_xlim(ax.get_xlim())
     zt = [lo, lo + 2, lo + 4, hi]
     zax.set_xticks(zt)
-    zax.set_xticklabels([f"{NU_LINE / v - 1:.3f}" for v in zt])
+    zax.set_xticklabels(
+        [f"{HI_REST_FREQUENCY_MHZ / v - 1:.3f}" for v in zt])
     zax.set_xlabel("21 cm redshift $z$", labelpad=4)
     zax.tick_params(length=2)
     for s in ("top", "right", "left", "bottom"):
@@ -139,18 +140,18 @@ def panel_allocation(ax, ch=35):
 
 def panel_band(ax):
     """470-608 MHz: 23 monitored bins against 353 covered."""
-    lo, hi = 470.0, 608.0
+    lo, hi = chn.ATSC_CH14_LOWER_EDGE, chn.ATSC_DTV_UPPER_EDGE
     n_bins = (hi - lo) / FS
-    for ch in range(14, 37):
+    for ch in chn.ATSC_DTV_CHANNELS:
         clo, chi = chn.channel_edges(ch)
         pilot = clo + ATSC_GUARD
-        ax.add_patch(Rectangle((clo + 0.05, 0.0), 6.0 - 0.1, 1.0,
+        ax.add_patch(Rectangle((clo + 0.05, 0.0), chn.ATSC_WIDTH - 0.1, 1.0,
                                facecolor=PROTECTED, edgecolor=SURFACE,
                                linewidth=0.7, alpha=0.60, zorder=2))
         ax.add_patch(Rectangle((bin_center(bin_index(pilot)) - FS / 2, 0.0),
                                FS, 1.0, facecolor=MONITORED, edgecolor="none",
                                zorder=3))
-    for ch in range(14, 37, 2):
+    for ch in chn.ATSC_DTV_CHANNELS[::2]:
         clo, _ = chn.channel_edges(ch)
         ax.text(clo + 3.0, 1.06, str(ch), ha="center", va="bottom",
                 fontsize=6.0, color=MUTED)
@@ -174,7 +175,8 @@ def panel_band(ax):
     zax.set_xlim(ax.get_xlim())
     zt = [470, 500, 540, 580, 608]
     zax.set_xticks(zt)
-    zax.set_xticklabels([f"{NU_LINE / v - 1:.2f}" for v in zt])
+    zax.set_xticklabels(
+        [f"{HI_REST_FREQUENCY_MHZ / v - 1:.2f}" for v in zt])
     zax.set_xlabel("21 cm redshift $z$", labelpad=4)
     zax.tick_params(length=2)
     for s in ("top", "right", "left", "bottom"):

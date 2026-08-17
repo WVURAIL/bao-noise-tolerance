@@ -1,13 +1,11 @@
 """Validation tests for the high-level public API wrappers."""
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 from baonoise import api, compat, scenarios
+from baonoise.fisherbank import ARTIFACT_FORECAST
 
 
 class _NoForecastWork:
@@ -44,6 +42,48 @@ def test_explicit_radiofisher_path_is_still_honored(monkeypatch):
     fc = api.load(rf_dir=requested)
     assert fc.rf is backend
     assert fc.rf_dir == requested
+
+
+@pytest.mark.parametrize("cosmology", ["planck2018", "pact2025"])
+def test_named_cosmology_routes_through_packaged_bank_registry(
+        monkeypatch, cosmology):
+    resource = object()
+    loaded_bank = type("Bank", (), {"meta": {"config": "chime2022"}})()
+    result = object()
+    seen = {}
+
+    def bank_file(name):
+        seen["cosmology"] = name
+        return resource
+
+    def fisher_bank(source, *, expected_artifact_kind):
+        seen["source"] = source
+        seen["artifact_kind"] = expected_artifact_kind
+        return loaded_bank
+
+    def forecast(bank, rf, *, style, rf_dir):
+        seen.update(bank=bank, rf=rf, style=style, rf_dir=rf_dir)
+        return result
+
+    monkeypatch.setattr(api, "bank_file", bank_file)
+    monkeypatch.setattr(api, "FisherBank", fisher_bank)
+    monkeypatch.setattr(api._forecast, "Forecast", forecast)
+
+    assert api.load(cosmology=cosmology) is result
+    assert seen == {
+        "cosmology": cosmology,
+        "source": resource,
+        "artifact_kind": ARTIFACT_FORECAST,
+        "bank": loaded_bank,
+        "rf": None,
+        "style": "perbin_A",
+        "rf_dir": None,
+    }
+
+
+def test_api_rejects_explicit_and_named_bank_together(tmp_path):
+    with pytest.raises(ValueError, match="either bank=.*cosmology"):
+        api.load(tmp_path / "bank.npz", cosmology="pact2025")
 
 
 @pytest.mark.parametrize("target", [0.0, -1.0, np.nan, np.inf, True])
@@ -101,3 +141,18 @@ def test_significance_accepts_zero_years():
             return 0.0
 
     assert api.significance(Forecast(), 0.0, uniform=0.0) == 0.0
+
+
+def test_threshold_curve_preserves_orderable_string_labels():
+    class Forecast:
+        def required_hours_metric(self, metric, target):
+            return 10.0 if metric(1.0) else 20.0
+
+        def significance(self, scenario, hours, bins=None):
+            return float(hours) + sum(scenario.residuals.values())
+
+    points = {"loose": {30: (0.1, 0.3)},
+              "strict": {30: (0.3, 0.1)}}
+    result = api.threshold_curve(Forecast(), points)
+    assert result["eta"].tolist() == ["loose", "strict"]
+    assert result["best_eta"] in points

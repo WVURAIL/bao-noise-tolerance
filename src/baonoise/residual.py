@@ -68,6 +68,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .npzio import load_npz
+
 # Delay-filter suppression of the DTV shelf, dB, as a function of which BAO
 # feature the filter must preserve. Derived from the k_par <-> delay relation
 # k_par = 2 pi nu_21 H0 E(z) tau / [c (1 + z)^2] (Amiri et al. 2023, Eq. 64)
@@ -279,7 +281,7 @@ def shelf_statistics(npz_path: str | Path, off_through: str | None = None,
     which lumps day-to-day drift in with intra-day variation, understates the
     ground filter and double-counts that power in the coherence term.
     """
-    d = np.load(npz_path, allow_pickle=True)
+    d = load_npz(npz_path)
     valid = d["valid"][:, 0].astype(bool)
     rejected = d["reject_mask"][:, 0].astype(bool)
     shelf = d["snr_shelf_db"][:, 0]
@@ -508,7 +510,7 @@ def correlation_time(npz_path: str | Path, off_through: str | None = None,
     answer is entirely an artefact of where the tail was cut. Those channels
     get a refusal and the conservative cap rather than a number.
     """
-    d = np.load(npz_path, allow_pickle=True)
+    d = load_npz(npz_path)
     channel = int(d["physical_channel"][0])
 
     probes = {}
@@ -818,6 +820,7 @@ class FloorProvenance:
 # correspond to *in the full null*; the kept sample is its lower half, so the
 # p-th percentile of the kept frames is the (p/2)-th percentile of the null.
 NULL_SCALE_PROBES = ((32.0, 1.0000), (5.0, 1.9600), (0.3, 2.9677))
+MIN_THRESHOLD_SWEEP_KEPT_FRAMES = 30
 
 
 def null_scale(f_kept: np.ndarray, mu0: float) -> tuple[float, float]:
@@ -840,7 +843,7 @@ def null_scale(f_kept: np.ndarray, mu0: float) -> tuple[float, float]:
 def floor_provenance(npz_path: str | Path,
                      floor_percentile: float = 90.0) -> FloorProvenance:
     """Trace a channel's reported floor back to the constant that fixes it."""
-    d = np.load(npz_path, allow_pickle=True)
+    d = load_npz(npz_path)
     valid = d["valid"][:, 0].astype(bool)
     rejected = d["reject_mask"][:, 0].astype(bool)
     F = d["fstat_raw"][:, 0]
@@ -1302,7 +1305,8 @@ def mask_benefit(channel, f, r_unmasked, r_masked) -> MaskDecision:
 
 def threshold_sweep(npz_path, off_through=None, etas=None,
                     delay_key=DEFAULT_DELAY_KEY, floor_percentile=90.0,
-                    tau_intraday=None, floor_db=None):
+                    tau_intraday=None, floor_db=None,
+                    min_kept: int = MIN_THRESHOLD_SWEEP_KEPT_FRAMES):
     """(eta, f, kept-shelf dB, r, net) as the coarse threshold F > eta*mu0 moves.
 
     This is what the framework exists to compute: the detector's operating
@@ -1319,7 +1323,7 @@ def threshold_sweep(npz_path, off_through=None, etas=None,
     defend. Without it, such a product returns an empty sweep rather than a
     fabricated one.
     """
-    d = np.load(npz_path, allow_pickle=True)
+    d = load_npz(npz_path)
     valid = d["valid"][:, 0].astype(bool)
     shelf = d["snr_shelf_db"][:, 0]
     F = d["fstat_raw"][:, 0]
@@ -1362,7 +1366,7 @@ def threshold_sweep(npz_path, off_through=None, etas=None,
     out = []
     for eta in etas:
         keep = on & (F <= eta * mu0)
-        if keep.sum() < 30:
+        if keep.sum() < min_kept:
             continue
         f = 1.0 - keep.sum() / on.sum()
         kept_lin = float(lin[keep].mean())

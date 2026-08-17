@@ -22,21 +22,19 @@ residual regardless of its time cost.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-import matplotlib                                       # noqa: E402
+import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt                         # noqa: E402
+import matplotlib.pyplot as plt
 
-from baonoise import incumbent as I                     # noqa: E402
-from baonoise import products as _products  # noqa: E402
-from baonoise import residual as R                      # noqa: E402
+from baonoise import incumbent as I
+from baonoise import products as _products
+from baonoise import residual as R
+from baonoise.npzio import load_npz
 
 # Validated categorical pair (see plot_footprint.py):
 #   node scripts/validate_palette.js "#2a78d6,#eb6834" --pairs all  -> ALL PASS
@@ -86,7 +84,7 @@ def policies(npz):
     gain = (st.intraday_fraction
             * R.n_coh_from_correlation_time(corr.tau_for_budget)
             + st.fast_fraction)
-    d = np.load(npz, allow_pickle=True)
+    d = load_npz(npz)
     valid = d["valid"][:, 0].astype(bool)
     f_dep = float(d["reject_mask"][valid, 0].astype(bool).mean())
     res = {r.name: r for r in I.compare_flaggers(npz)[0]}

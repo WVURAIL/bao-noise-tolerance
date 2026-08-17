@@ -22,10 +22,9 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise import channels as chn        # noqa: E402
-from baonoise.resources import DEFAULT_BANK  # noqa: E402
+from baonoise import channels as chn
+from baonoise.resources import DEFAULT_BANK
 
 
 def main() -> int:

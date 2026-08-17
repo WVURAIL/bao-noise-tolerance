@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The joint (rho, multiplier) operating point of the fine decision, derived.
 
-The fine decision v1 has two knobs: the rank rho (which order statistic of
+The fine decision has two knobs: the rank rho (which order statistic of
 the null bulk anchors the bar) and the multiplier m (how far above it the
 bar sits). Neither is a free constant here. Both fall out of the same
 objective that already selected the coarse eta*:
@@ -67,15 +67,14 @@ import argparse
 import csv
 import datetime as dt
 import importlib.util
-import sys
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise import residual as R                        # noqa: E402
+from baonoise import residual as R
+from baonoise.npzio import load_npz
 
 spec = importlib.util.spec_from_file_location(
     "ot", str(ROOT / "scripts" / "optimal_thresholds.py"))
@@ -90,7 +89,7 @@ PRODUCTS = dict(ot.DEFAULT_PRODUCTS)   # resolved by the products manifest
 
 HALF = 2                             # designated half-width = guard (chapter)
 LF = 256
-MIN_KEPT = 30                        # threshold_sweep's small-sample guard
+MIN_KEPT = R.MIN_THRESHOLD_SWEEP_KEPT_FRAMES
 MIN_COHORT = 100
 INF = float("inf")
 
@@ -129,7 +128,7 @@ def measure_anchor(ff, rej, quiet, cal_lo):
 def channel_tables(path):
     """Per-frame pieces shared by every (rho, m), with the measured
     (era-unioned) designated window."""
-    d = np.load(path, allow_pickle=True)
+    d = load_npz(path)
     valid = d["valid"][:, 0].astype(bool)
     ff = d["fstat_fine"]
     fin = np.isfinite(ff).all(axis=1)

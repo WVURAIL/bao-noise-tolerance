@@ -9,12 +9,7 @@ downstream. The preflight makes it a first-grid-point error instead.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from baonoise import fisherbank
 
@@ -45,7 +40,7 @@ def test_missing_row_is_an_error(stub_fisher):
         fisherbank._preflight({"P_res": 1.0}, 1e4)
     msg = str(exc.value)
     assert "_Pres" in msg
-    assert "rfi-noise-model-chime" in msg      # tells the user the actual fix
+    assert "P_res capability" in msg           # tells the user the actual fix
     assert "/fake/RadioFisher" in msg          # and which checkout is at fault
 
 
@@ -84,3 +79,24 @@ def test_foreground_provenance_survives_a_missing_context():
     fisherbank._CTX.pop("make_expt", None)
     assert fisherbank._foreground_provenance() == {
         "foreground_settings": "unavailable"}
+
+
+def test_unknown_config_fails_before_importing_backend(monkeypatch, tmp_path):
+    def unexpected_import(*_args, **_kwargs):
+        raise AssertionError("backend import started before config validation")
+
+    monkeypatch.setattr("baonoise.compat.import_radiofisher", unexpected_import)
+    with pytest.raises(ValueError, match="unknown config"):
+        fisherbank._init_context(
+            None, tmp_path / "cache.dat", "unknown", 1e-6, 0.14)
+
+
+def test_invalid_config_cosmology_pair_fails_before_backend(monkeypatch,
+                                                            tmp_path):
+    def unexpected_import(*_args, **_kwargs):
+        raise AssertionError("backend import started before config validation")
+
+    monkeypatch.setattr("baonoise.compat.import_radiofisher", unexpected_import)
+    with pytest.raises(ValueError, match="does not support cosmology"):
+        fisherbank.build_bank(
+            tmp_path / "wrong.npz", config="bull2015", cosmology="pact2025")

@@ -12,14 +12,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import numpy as np                                            # noqa: E402
+import numpy as np
 
-from baonoise import incumbent, residual                      # noqa: E402
+from baonoise import incumbent, residual
 
 
 def main(argv=None):

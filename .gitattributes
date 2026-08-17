@@ -1,3 +1,7 @@
 # Keep distributed scientific inputs byte-stable across operating systems.
+*.py text eol=lf
+*.toml text eol=lf
 src/baonoise/data/*.csv text eol=lf
+src/baonoise/data/*.json text eol=lf
 src/baonoise/data/*.npz binary
+src/baonoise/data/*.dat text eol=lf

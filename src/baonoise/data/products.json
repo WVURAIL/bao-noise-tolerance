@@ -1,5 +1,5 @@
 {
-  "comment": "Survey-product registry: one entry per monitored DTV channel. Resolution order per channel: explicit 'path' (products.local.json first, then here), else each search dir is tried for {freq_id}.npz then *-{freq_id}.npz. Dirs from $BAONOISE_PRODUCT_DIRS (colon-separated) are searched first; relative dirs resolve against the repo root. Machine-local additions belong in data/products.local.json (gitignored), never here.",
+  "comment": "Survey-product registry: one entry per monitored DTV channel. Resolution order per channel: explicit 'path' (products.local.json first, then here), else each search dir is tried for {freq_id}.npz then *-{freq_id}.npz. Dirs from $BAONOISE_PRODUCT_DIRS are searched first; relative dirs resolve against the source checkout when present. Machine-local additions belong in data/products.local.json (gitignored), never here.",
   "search_dirs": ["products"],
   "channels": {
     "14": {"freq_id": 844}, "15": {"freq_id": 829}, "16": {"freq_id": 813},

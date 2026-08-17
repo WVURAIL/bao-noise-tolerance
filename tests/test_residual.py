@@ -6,13 +6,8 @@ must survive byte-for-byte. Second, that with it present the forecast stops
 being monotone in the masked fraction, which is the whole point: only then is a
 detector threshold something you can optimise rather than assume.
 """
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from baonoise import residual, scenarios
 
@@ -49,8 +44,10 @@ def test_zero_residual_is_exactly_identity():
 
 
 def test_uniform_constructor_defaults_to_no_residual():
-    assert scenarios.uniform(0.5, "dtv").residuals == {}
-    assert scenarios.uniform(0.5, "dtv", residual=0.1).residuals[20] == 0.1
+    assert scenarios.uniform(0.5, scenarios.DTV_BAND).frequency_residuals == {}
+    assert scenarios.uniform(
+        0.5, scenarios.DTV_BAND,
+        residual=0.1).frequency_residuals[scenarios.DTV_BAND] == 0.1
 
 
 # ----------------------------------------------------------------------

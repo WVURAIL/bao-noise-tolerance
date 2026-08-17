@@ -14,18 +14,18 @@ eps_FG=1e-6, no calibration systematics); the robust currency is the
 
 | scenario | label | sig_at_2yr | years_5sig | time_penalty_vs_clean |
 |---|---|---|---|---|
-| clean | No masking (RFI-free) | 63.06 | 0.0241 | 1.0 |
-| measured | Measured pilot-proxy masking | 61.46 | 0.0249 | 1.032 |
-| uniform50_dtv | 50% masked, dtv band | 57.42 | 0.0278 | 1.151 |
-| uniform75_dtv | 75% masked, dtv band | 53.46 | 0.0294 | 1.218 |
-| uniform97_dtv | 97% masked, dtv band | 49.3 | 0.0303 | 1.255 |
-| measured_fourier | Measured (Fourier-mode noise convention) | 61.4 | 0.025 | 1.034 |
-| uniform25_dtv | 25% masked, dtv band | 60.52 | 0.026 | 1.075 |
-| uniform90_dtv | 90% masked, dtv band | 50.61 | 0.0301 | 1.247 |
-| uniform50_all | 50% masked, all band | 48.45 | 0.0483 | 2.0 |
-| ch30_excised | ch30 97% masked (excised) | 62.51 | 0.0243 | 1.008 |
-| ch30_kept | ch30 97% masked (kept) | 62.68 | 0.0245 | 1.013 |
-| ch30_kept_fourier | ch30 97% masked (kept) | 59.78 | 0.0257 | 1.064 |
+| clean | No masking (RFI-free) | 63.51 | 0.0238 | 1.0 |
+| measured | Measured pilot-proxy masking | 61.89 | 0.0246 | 1.032 |
+| uniform50_dtv | 50% masked, dtv band | 57.82 | 0.0274 | 1.151 |
+| uniform75_dtv | 75% masked, dtv band | 53.84 | 0.029 | 1.218 |
+| uniform97_dtv | 97% masked, dtv band | 49.65 | 0.0299 | 1.254 |
+| measured_fourier | Measured (Fourier-mode noise convention) | 61.83 | 0.0247 | 1.034 |
+| uniform25_dtv | 25% masked, dtv band | 60.95 | 0.0256 | 1.075 |
+| uniform90_dtv | 90% masked, dtv band | 50.97 | 0.0297 | 1.246 |
+| uniform50_chime | 50% masked, chime band | 48.8 | 0.0477 | 2.0 |
+| ch30_excised | ch30 97% masked (excised) | 62.95 | 0.024 | 1.008 |
+| ch30_kept | ch30 97% masked (kept) | 63.12 | 0.0242 | 1.013 |
+| ch30_kept_fourier | ch30 97% masked (kept) | 60.2 | 0.0254 | 1.064 |
 
 Reading: the measured pilot-proxy masking costs the survey only
 **3%
@@ -43,20 +43,20 @@ sigma(alpha_perp) <= 2% (a per-bin BAO distance measurement):
 
 | zbin | scenario | years_bin5sig | years_da2pct |
 |---|---|---|---|
-| 1.40-1.50 | clean | 0.177 | 0.318 |
-| 1.40-1.50 | measured | 0.238 | 0.426 |
-| 1.40-1.50 | measured_fourier | 0.239 | 0.428 |
-| 1.40-1.50 | uniform50_dtv | 0.353 | 0.636 |
-| 1.40-1.50 | ch30_excised | 0.203 | 0.363 |
-| 1.40-1.50 | ch30_kept | 0.21 | 0.377 |
-| 1.40-1.50 | ch30_kept_fourier | 1.103 | 1.984 |
-| 1.60-1.70 | clean | 0.212 | 0.416 |
-| 1.60-1.70 | measured | 0.289 | 0.554 |
-| 1.60-1.70 | measured_fourier | 0.289 | 0.554 |
-| 1.60-1.70 | uniform50_dtv | 0.424 | 0.831 |
-| 1.60-1.70 | ch30_excised | 0.212 | 0.416 |
-| 1.60-1.70 | ch30_kept | 0.212 | 0.416 |
-| 1.60-1.70 | ch30_kept_fourier | 0.212 | 0.416 |
+| 1.40-1.50 | clean | 0.174 | 0.315 |
+| 1.40-1.50 | measured | 0.235 | 0.421 |
+| 1.40-1.50 | measured_fourier | 0.236 | 0.424 |
+| 1.40-1.50 | uniform50_dtv | 0.349 | 0.629 |
+| 1.40-1.50 | ch30_excised | 0.2 | 0.359 |
+| 1.40-1.50 | ch30_kept | 0.207 | 0.373 |
+| 1.40-1.50 | ch30_kept_fourier | 1.088 | 1.963 |
+| 1.60-1.70 | clean | 0.209 | 0.411 |
+| 1.60-1.70 | measured | 0.286 | 0.547 |
+| 1.60-1.70 | measured_fourier | 0.286 | 0.547 |
+| 1.60-1.70 | uniform50_dtv | 0.418 | 0.821 |
+| 1.60-1.70 | ch30_excised | 0.209 | 0.411 |
+| 1.60-1.70 | ch30_kept | 0.209 | 0.411 |
+| 1.60-1.70 | ch30_kept_fourier | 0.209 | 0.411 |
 
 ## The channel-30 story
 
@@ -69,14 +69,26 @@ Channel 30 (566-572 MHz, z = 1.48-1.51) is masked ~97% of the time. Options:
   and under the Fourier-mode noise convention the surviving 97% of the
   containing z-bin is dragged down with it (see ch30_kept_fourier rows).
 * **Excise it** (what the forecast prices by default): costs the overlapped
-  bandwidth, a 22% volume hit to the z=1.40-1.51 bin, a
+  bandwidth, a 16% volume hit to the z=1.40-1.50 bin, a
   0.8%
   time penalty at survey level.
 
 Excision wins by an enormous margin: throw the channel out and pay in volume,
 never in noise.
 
+
+## Matched fiducial-cosmology comparison
+
+The provenance-complete, matched-grid Planck-2018 and P-ACT-LB banks require
+208.9 and
+187.0 clean on-sky hours, respectively, for the
+survey-level 5-sigma target (-10.5%). Across the survey and
+both reported bin-level metrics, the largest relative change in a masking
+penalty is 0.225%.
+
+
 ## Files
 
 required_times.csv, bin_level_targets.csv, tolerance_curve.csv,
-perbin_significance_1onskyyr.csv, fig1-fig4 (png + pdf).
+perbin_significance_1onskyyr.csv, fiducial_comparison.csv,
+fig1-fig4 (png + pdf).

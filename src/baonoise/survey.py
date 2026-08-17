@@ -8,12 +8,15 @@ from pathlib import Path
 
 import numpy as np
 
-HRS_MHZ = 3.6e9          # 1 hour in MHz^-1 (radiofisher.units)
-NU_LINE = 1420.406       # 21cm rest frequency [MHz]
-HOURS_PER_YEAR = 8766.0  # mean calendar year, hours
+from ._validation import positive_scalar
+from .constants import HI_REST_FREQUENCY_MHZ
+
+HRS_MHZ = 3.6e9                  # 1 hour in MHz^-1 (radiofisher.units)
+MEAN_CALENDAR_YEAR_HOURS = 8766.0  # 365.25 days
+OVERVIEW_ONSKY_YEAR_HOURS = 8760.0  # 365 days, Overview normalization
 
 # Literature-anchored time accounting (see paper, duty-cycle paragraph):
-# * ONSKY_YEAR_HOURS: the CHIME Overview forecast normalization: t_tot =
+# * OVERVIEW_ONSKY_YEAR_HOURS: the CHIME Overview normalization: t_tot =
 #   "1 yr" means 8,760 on-sky hours with no duty factor (Amiri et al. 2022,
 #   ApJS 261, 29, Table 2 / Appendix A; 365*24 in Foreman's chime2021 code).
 # * DUTY_2019_PRACTICE: empirical cosmology-quality fraction of the 2019
@@ -25,7 +28,6 @@ HOURS_PER_YEAR = 8766.0  # mean calendar year, hours
 #   coverage after masking is discarded", Amiri et al. 2022) is the
 #   mechanism behind the day-retention factor; the 102-night dataset of the
 #   2023 detection (ApJ 947, 16) corroborates the ~100-night/year scale.
-ONSKY_YEAR_HOURS = 8760.0
 DUTY_2019_PRACTICE = 0.152
 
 
@@ -41,15 +43,17 @@ def chime_experiment(rf, rf_dir: str | Path, ttot_hours: float = 1e4,
     expt["epsilon_fg"] = epsilon_fg
     expt["k_nl0"] = k_nl0
     if nx_file is None:
-        from .layout import ensure_chime_nx
-        nx_file = ensure_chime_nx(rf_dir, Path(__file__).resolve().parents[2] / "data")
+        from .resources import SYNTHETIC_BASELINE_NAME, filesystem_data_file
+        nx_file = filesystem_data_file(SYNTHETIC_BASELINE_NAME)
     expt["n(x)"] = str(nx_file)
     return expt
 
 
 def chime_zbins(rf, expt: dict, dz: float = 0.1):
     """Equal-dz redshift bins over the CHIME band (400-800 MHz)."""
-    zs, zc = rf.zbins_equal_spaced(rf.overlapping_expts(expt), dz=dz)
+    # CHIME is a single instrument (no ``overlap`` experiment component), so
+    # the backend's supported binning helper consumes its experiment directly.
+    zs, zc = rf.zbins_equal_spaced(expt, dz=dz)
     return np.asarray(zs), np.asarray(zc)
 
 
@@ -65,11 +69,21 @@ def _import_experiments_chime(rf_dir: str | Path):
     for p in (str(rf_dir), chime_dir):
         if p not in sys.path:
             sys.path.insert(0, p)
-    return importlib.import_module("experiments_CHIME")
+    module = importlib.import_module("experiments_CHIME")
+    module_file = Path(module.__file__).resolve()
+    expected = Path(chime_dir).resolve()
+    try:
+        module_file.relative_to(expected)
+    except ValueError as exc:
+        raise RuntimeError(
+            "experiments_CHIME checkout mismatch: requested data from "
+            f"{expected}, but Python already imported {module_file}. Start a "
+            "fresh process with one RadioFisher checkout.") from exc
+    return module
 
 
 def chime2022_experiment(rf, rf_dir: str | Path,
-                         ttot_hours: float = 8760.0) -> dict:
+                         ttot_hours: float = OVERVIEW_ONSKY_YEAR_HOURS) -> dict:
     """CHIME as forecast in the Overview paper: as-built 4x256 geometry,
     Tsys_tot = 55 K, S_sky = 31,000 deg^2, BAO-shift-only USE flags,
     epsilon_fg = 0, Simon Foreman's as-built n(u)."""
@@ -97,13 +111,21 @@ def chime2022_zbins():
 
 def zbin_freq_range(zmin: float, zmax: float) -> tuple[float, float]:
     """Frequency interval [MHz] covered by a redshift bin (lo, hi)."""
-    return NU_LINE / (1.0 + zmax), NU_LINE / (1.0 + zmin)
+    return (HI_REST_FREQUENCY_MHZ / (1.0 + zmax),
+            HI_REST_FREQUENCY_MHZ / (1.0 + zmin))
 
 
-def hours_to_years(hours: np.ndarray | float, duty: float = 0.75):
-    """Calendar years for a 24/7 transit survey with the given duty cycle."""
-    return np.asarray(hours) / (HOURS_PER_YEAR * duty)
+def hours_to_years(hours: np.ndarray | float, duty: float = 1.0,
+                   hours_per_year: float = MEAN_CALENDAR_YEAR_HOURS):
+    """Years on an explicit hour basis, optionally adjusted by ``duty``."""
+    duty = positive_scalar(duty, "duty")
+    hours_per_year = positive_scalar(hours_per_year, "hours_per_year")
+    return np.asarray(hours) / (hours_per_year * duty)
 
 
-def years_to_hours(years: np.ndarray | float, duty: float = 0.75):
-    return np.asarray(years) * HOURS_PER_YEAR * duty
+def years_to_hours(years: np.ndarray | float, duty: float = 1.0,
+                   hours_per_year: float = MEAN_CALENDAR_YEAR_HOURS):
+    """Hours on an explicit year basis, optionally adjusted by ``duty``."""
+    duty = positive_scalar(duty, "duty")
+    hours_per_year = positive_scalar(hours_per_year, "hours_per_year")
+    return np.asarray(years) * hours_per_year * duty

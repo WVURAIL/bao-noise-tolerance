@@ -25,12 +25,10 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from baonoise import residual as R          # noqa: E402
-from baonoise import forecast, scenarios    # noqa: E402
-from baonoise.fisherbank import FisherBank  # noqa: E402
-from baonoise.resources import DEFAULT_BANK  # noqa: E402
+from baonoise import api, channels, residual as R, scenarios
+from baonoise.resources import DEFAULT_BANK
+from baonoise.constants import HI_REST_FREQUENCY_MHZ
 
 TAU_GRID = np.array([
     R.CHIME_FRAME_SECONDS, 1.0, 10.0, 60.0, 300.0, 900.0, 3600.0,
@@ -111,12 +109,9 @@ def main() -> int:
     print("=" * 72)
     print("SWEEP over the residual correlation time")
     print("=" * 72)
-    bank = FisherBank(args.bank)
-    style = "perbin_A" if bank.meta.get("config") == "chime2022" else "shared_A"
-    if style != "perbin_A":
-        print("note: this bank needs RadioFisher for the shared_A path")
-    fc = forecast.Forecast(bank, None, style=style)
-    dtv_chans = scenarios.band_channels("dtv")
+    fc = api.load(args.bank)
+    bank = fc.bank
+    dtv_chans = channels.ATSC_DTV_CHANNELS
 
     def sweep(bins):
         clean_h = fc.required_hours_metric(
@@ -198,8 +193,8 @@ def _worst_dtv_bin(bank) -> int:
     lo_dtv, hi_dtv = chn.channel_edges(14)[0], chn.channel_edges(36)[1]
     best, frac_best = 0, -1.0
     for i in range(bank.nbins):
-        nu_lo = chn.NU_LINE / (1.0 + bank.zs[i + 1])
-        nu_hi = chn.NU_LINE / (1.0 + bank.zs[i])
+        nu_lo = HI_REST_FREQUENCY_MHZ / (1.0 + bank.zs[i + 1])
+        nu_hi = HI_REST_FREQUENCY_MHZ / (1.0 + bank.zs[i])
         ov = max(0.0, min(nu_hi, hi_dtv) - max(nu_lo, lo_dtv))
         frac = ov / (nu_hi - nu_lo)
         if frac > frac_best:

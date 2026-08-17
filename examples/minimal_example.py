@@ -4,11 +4,6 @@
 Uses the CHIME Fisher bank and quarterly rates shipped inside the package.
 Runs in seconds without a RadioFisher checkout or a bank build.
 """
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 from baonoise import api
 
 fc = api.load()  # shipped CHIME bank; RadioFisher is not required
@@ -21,7 +16,7 @@ mask = {17: 0.33, 24: 0.97, 30: 0.97, 31: 0.24, 32: 0.14, 33: 0.10, 35: 0.14}
 # Survey-level 5-sigma BAO detection
 print(api.required_time(fc, mask, target=5.0))
 
-# The worst-affected redshift bin alone (bin 6: z = 1.40-1.51)
+# The worst-affected redshift bin alone (bin 6: z = 1.40-1.50)
 print(api.required_time(fc, mask, target=5.0, zbin=6))
 
 # Significance after 2 on-sky years at the Overview normalization

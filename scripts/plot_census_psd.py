@@ -9,17 +9,15 @@ average of every frame's 16384-point within-channel spectrum).
     python3 scripts/plot_census_psd.py --out /tmp/diss/figs
 """
 from __future__ import annotations
-import argparse, sys
+import argparse
 from pathlib import Path
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-from baonoise.plots import (GRID, INK, INK2, MUTED, SERIES, SURFACE,
-                            CRITICAL, _save, setup_style)  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
+from baonoise.plots import GRID, INK, SERIES, _save, setup_style
+import matplotlib.pyplot as plt
 
-from baonoise import products as P                        # noqa: E402
+from baonoise import products as P
+from baonoise.npzio import load_npz
 PRODUCTS = P.paths()
 FS = 390.625e3
 NFFT = 16384
@@ -42,7 +40,7 @@ def main(argv=None):
     for ax in axes.ravel()[n:]:
         ax.set_visible(False)
     for ax, (ch, path) in zip(axes.ravel(), sorted(PRODUCTS.items())):
-        d = np.load(path, allow_pickle=True)
+        d = load_npz(path)
         s = d["integrated_spectrum_before_mask"]
         # anchor at the metadata pilot position (DC sits at bin 0 and can
         # exceed the pilot in the archive average), refined to the local
