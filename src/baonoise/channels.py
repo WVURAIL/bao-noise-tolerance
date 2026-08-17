@@ -20,10 +20,13 @@ REFUSED_FRACTION.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import json
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import numpy as np
 
 from .npzio import load_npz
 from .constants import HI_REST_FREQUENCY_MHZ
@@ -99,6 +102,7 @@ class MaskTable:
     detector_version: str = "unrecorded"
     n_frames: dict[int, int] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    window: str = "full span"       # epoch the fractions describe
 
     @property
     def is_traceable(self) -> bool:
@@ -107,6 +111,8 @@ class MaskTable:
     def summary(self) -> str:
         head = (f"{len(self.fractions)} channels from {self.source}; "
                 f"rule: {self.rule}")
+        if self.window != "full span":
+            head += f"; window: {self.window}"
         body = "\n".join(
             f"    ch{ch:>3d}  {f:7.4f}"
             + (f"   ({self.n_frames[ch]} frames)" if ch in self.n_frames else "")
@@ -115,11 +121,32 @@ class MaskTable:
         return f"{head}\n{body}{tail}"
 
 
+def _frame_months(d) -> np.ndarray:
+    """UTC ``YYYY-MM`` label per frame, from the product's unit timestamps."""
+    months = np.array([
+        dt.datetime.fromtimestamp(float(t), dt.timezone.utc).strftime("%Y-%m")
+        for t in np.asarray(d["unit_time0_ctime"], dtype=float)])
+    return months[np.asarray(d["frame_unit_index"])]
+
+
 def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
                              refused_fraction: float = REFUSED_FRACTION,
                              require_same_detector: bool = True,
-                             stage: str = "coarse") -> MaskTable:
+                             stage: str = "coarse",
+                             since: str | None = None,
+                             until: str | None = None) -> MaskTable:
     """Masked fractions straight from the survey products.
+
+    ``since``/``until`` restrict the fractions to frames in UTC months
+    ``since <= YYYY-MM <= until``. A masked fraction is an epoch statement as
+    much as a rule statement: a channel whose transmitter signed off carries
+    its dead epoch in the full-span fraction, and a forward-looking forecast
+    wants the fraction from the epoch that still describes the sky (e.g. the
+    trailing year). The window travels in ``MaskTable.window`` next to the
+    rule, and a channel with no valid frames inside the window is omitted
+    (with a note) rather than reported from the wrong epoch. Products that
+    carry no unit timestamps cannot be windowed and are refused when a window
+    is requested.
 
     ``stage`` picks which decision to report, and the returned table names it,
     because the pipeline makes more than one and they differ by two orders of
@@ -145,12 +172,27 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
     product predates a release, which is worth knowing but does not change
     what F was computed to be.
     """
+    windowed = since is not None or until is not None
+    window = ("full span" if not windowed
+              else f"{since or 'start'}..{until or 'end'}")
     fractions, n_frames, rules = {}, {}, set()
     kernels, packages, seen = set(), set(), {}
+    window_notes = []
     for p in paths:
         d = load_npz(p)
         ch = int(d["physical_channel"][0])
         valid = d["valid"][:, 0].astype(bool)
+        if windowed:
+            if "unit_time0_ctime" not in d or "frame_unit_index" not in d:
+                raise ValueError(
+                    f"{Path(p).name} carries no unit timestamps, so its "
+                    f"fractions cannot be windowed; drop since/until or "
+                    f"regenerate the product with time provenance")
+            month = _frame_months(d)
+            if since is not None:
+                valid = valid & (month >= since)
+            if until is not None:
+                valid = valid & (month <= until)
         if stage == "coarse":
             rejected = d["reject_mask"][:, 0].astype(bool)
         elif stage == "fine":
@@ -161,6 +203,9 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
         else:
             raise ValueError(f"unknown stage {stage!r}; use 'coarse' or 'fine'")
         if valid.sum() == 0:
+            if windowed:
+                window_notes.append(
+                    f"ch{ch} has no valid frames in {window}; omitted")
             continue
         if ch in fractions:
             raise ValueError(
@@ -188,7 +233,9 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
                           if tok.startswith("kernel_sha256=")), "unrecorded"))
 
     if not fractions:
-        raise ValueError("no product yielded any valid frames")
+        raise ValueError(
+            "no product yielded any valid frames"
+            + (f" in {window}" if windowed else ""))
     if require_same_detector and len(rules) > 1:
         raise ValueError(f"products disagree on the mask rule: {sorted(rules)}; "
                          f"combining them would average two detectors")
@@ -198,7 +245,7 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
             f"the frames were decided by different code; re-run them under "
             f"one kernel, or pass require_same_detector=False to override")
 
-    notes = []
+    notes = list(window_notes)
     if len(packages) > 1:
         notes.append(f"products span harness versions {sorted(packages)} over "
                      f"one kernel ({sorted(kernels)[0][:12]}); F is comparable, "
@@ -212,7 +259,7 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
                      source=f"products[{stage}]", rule=sorted(rules)[0],
                      detector_version="+".join(sorted(packages))
                      + f" kernel={sorted(kernels)[0][:12]}",
-                     n_frames=n_frames, notes=notes)
+                     n_frames=n_frames, notes=notes, window=window)
 
 
 def measured_mask_table(rates_csv: str | Path = DEFAULT_RATES_CSV,

@@ -340,7 +340,8 @@ def measured(rates_csv=None, refused_fraction: float = chn.REFUSED_FRACTION,
              mode: str = "time",
              residuals: dict[int, float] | None = None,
              residual_excise_threshold: float = NO_EXCISION_THRESHOLD,
-             products=None, fill_missing: str = "error") -> Scenario:
+             products=None, fill_missing: str = "error",
+             since: str | None = None, until: str | None = None) -> Scenario:
     """Fiducial: pilot-proxy exposure-weighted rates; refused ch24/30 excised.
 
     ``residuals`` optionally adds the contamination that survives the mask
@@ -354,14 +355,31 @@ def measured(rates_csv=None, refused_fraction: float = chn.REFUSED_FRACTION,
     detectors in one table, which is the failure this argument exists to stop.
     Pass ``fill_missing='csv'`` to do it anyway (the scenario is then tagged),
     or ``'omit'`` to forecast on the covered channels alone.
+
+    ``since``/``until`` window the product fractions to UTC months
+    ``since <= YYYY-MM <= until`` (see
+    :func:`baonoise.channels.mask_table_from_products`): a forward-looking
+    forecast wants the epoch that still describes the sky, not a fraction
+    averaged over transmitters that have since signed off. They require
+    ``products`` and the scenario label carries the window.
     """
+    if (since is not None or until is not None) and products is None:
+        raise ValueError(
+            "since/until window product fractions and require products=; the "
+            "vendored CSV is quarterly and cannot be re-windowed here")
+    if (since is not None or until is not None) and fill_missing == "csv":
+        raise ValueError(
+            "fill_missing='csv' would put full-span CSV fractions beside "
+            "windowed product fractions — two epochs in one table; use "
+            "'omit' or cover the missing channels with products")
     kw = {} if rates_csv is None else {"rates_csv": rates_csv}
     table = chn.measured_mask_table(refused_fraction=refused_fraction, **kw)
     label, name = "Measured pilot-proxy masking", "measured"
 
     if products is not None:
         prod = chn.mask_table_from_products(products,
-                                            refused_fraction=refused_fraction)
+                                            refused_fraction=refused_fraction,
+                                            since=since, until=until)
         missing = sorted(set(table.fractions) - set(prod.fractions))
         if missing and fill_missing == "error":
             raise ValueError(
@@ -382,6 +400,8 @@ def measured(rates_csv=None, refused_fraction: float = chn.REFUSED_FRACTION,
             name = "measured_products"
         if fill_missing not in ("error", "csv", "omit"):
             raise ValueError(f"unknown fill_missing: {fill_missing!r}")
+        if prod.window != "full span":
+            label += f" [{prod.window}]"
     else:
         fr = table.fractions
 

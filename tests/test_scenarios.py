@@ -241,13 +241,23 @@ def test_channel_and_frequency_band_masks_must_not_overlap():
 # Mask-table provenance
 # ----------------------------------------------------------------------
 
-def _product(path, channel, masked, n=400, kernel="aaaa", pkg="pp/1.0.0"):
-    """Minimal survey product carrying a detector contract."""
+def _product(path, channel, masked, n=400, kernel="aaaa", pkg="pp/1.0.0",
+             months=None, rejected=None):
+    """Minimal survey product carrying a detector contract.
+
+    ``months`` (one ``YYYY-MM`` per frame) adds unit timestamps so the
+    product can be windowed; ``rejected`` overrides the fraction-derived
+    reject mask frame by frame.
+    """
+    import datetime as dt
     import json
-    rej = np.zeros(n, dtype=np.uint8)
-    rej[: int(round(masked * n))] = 1
-    np.savez(
-        path,
+    if rejected is None:
+        rej = np.zeros(n, dtype=np.uint8)
+        rej[: int(round(masked * n))] = 1
+    else:
+        rej = np.asarray(rejected, dtype=np.uint8)
+        n = rej.size
+    arrays = dict(
         valid=np.ones((n, 1), dtype=np.uint8),
         reject_mask=rej.reshape(n, 1),
         physical_channel=np.array([channel], dtype=np.int32),
@@ -255,6 +265,14 @@ def _product(path, channel, masked, n=400, kernel="aaaa", pkg="pp/1.0.0"):
         detector_contract_json=np.array(json.dumps(
             {"equivalent_mask_rule": "F > mu0", "threshold_mode": "none"})),
     )
+    if months is not None:
+        assert len(months) == n
+        t0 = np.array([
+            dt.datetime.strptime(m + "-15", "%Y-%m-%d")
+            .replace(tzinfo=dt.timezone.utc).timestamp() for m in months])
+        arrays["unit_time0_ctime"] = t0
+        arrays["frame_unit_index"] = np.arange(n, dtype=np.int32)
+    np.savez(path, **arrays)
     return path
 
 
@@ -310,6 +328,56 @@ def test_measured_refuses_to_mix_sources_by_default(tmp_path):
     mixed = scenarios.measured(products=p, fill_missing="csv")
     assert mixed.fractions[35] == pytest.approx(0.837, abs=2e-3)
     assert 17 in mixed.fractions and "CSV" in mixed.label
+
+
+def test_window_selects_the_epoch(tmp_path):
+    """A sign-off channel: masked through 2019, clean in 2025."""
+    months = ["2019-06"] * 200 + ["2025-06"] * 200
+    rej = np.concatenate([np.ones(200), np.zeros(200)])
+    p = _product(tmp_path / "w.npz", 35, 0.5, months=months, rejected=rej)
+    full = chn.mask_table_from_products([p])
+    assert full.fractions[35] == pytest.approx(0.5)
+    assert full.window == "full span"
+    late = chn.mask_table_from_products([p], since="2025-01")
+    assert late.fractions[35] == pytest.approx(0.0)
+    assert late.n_frames[35] == 200
+    assert late.window == "2025-01..end"
+    assert "2025-01" in late.summary()
+    early = chn.mask_table_from_products([p], until="2019-12")
+    assert early.fractions[35] == pytest.approx(1.0)
+
+
+def test_window_with_no_frames_omits_and_notes(tmp_path):
+    dead = _product(tmp_path / "dead.npz", 35, 1.0, months=["2019-06"] * 100,
+                    rejected=np.ones(100))
+    live = _product(tmp_path / "live.npz", 34, 0.1, months=["2025-06"] * 100,
+                    rejected=np.r_[np.ones(10), np.zeros(90)])
+    t = chn.mask_table_from_products([dead, live], since="2025-01")
+    assert 35 not in t.n_frames
+    assert t.fractions[34] == pytest.approx(0.1)
+    assert any("ch35 has no valid frames" in n for n in t.notes)
+    # a table that is empty inside the window refuses, and says which window
+    with pytest.raises(ValueError, match="2025-01"):
+        chn.mask_table_from_products([dead], since="2025-01")
+
+
+def test_window_requires_timestamps(tmp_path):
+    p = _product(tmp_path / "a.npz", 35, 0.25)
+    with pytest.raises(ValueError, match="unit timestamps"):
+        chn.mask_table_from_products([p], since="2025-01")
+
+
+def test_windowed_scenario_carries_the_window(tmp_path):
+    months = ["2019-06"] * 100 + ["2025-06"] * 100
+    rej = np.concatenate([np.ones(100), np.zeros(100)])
+    p = _product(tmp_path / "w.npz", 35, 0.5, months=months, rejected=rej)
+    sc = scenarios.measured(products=[p], fill_missing="omit", since="2025-01")
+    assert sc.fractions[35] == pytest.approx(0.0)
+    assert "2025-01" in sc.label
+    with pytest.raises(ValueError, match="require products"):
+        scenarios.measured(since="2025-01")
+    with pytest.raises(ValueError, match="two epochs"):
+        scenarios.measured(products=[p], fill_missing="csv", since="2025-01")
 
 
 def test_compare_mask_tables_orders_by_disagreement():
