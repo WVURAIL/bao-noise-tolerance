@@ -7,7 +7,10 @@ that keeps resource access valid for every import loader, including archives.
 from __future__ import annotations
 
 from importlib.resources import files
-from importlib.resources.abc import Traversable
+try:
+    from importlib.resources.abc import Traversable
+except ModuleNotFoundError:  # Python 3.10
+    from importlib.abc import Traversable
 from pathlib import Path
 from types import MappingProxyType
 

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+from typing import get_type_hints
 
 import numpy as np
 import pytest
@@ -90,6 +91,13 @@ def test_source_checkout_defaults_load_from_package_data():
     assert bank.meta["cosmology"] == "planck2018"
     assert bank.nbins == 15
     assert len(channels.measured_mask_fractions()) == 23
+
+
+def test_resource_annotations_resolve_on_supported_python():
+    """The Traversable type moved after Python 3.10."""
+    assert get_type_hints(resources.data_file)["return"].__name__ \
+        == "Traversable"
+    assert resources.DEFAULT_BANK.is_file()
 
 
 def test_named_bank_registry_is_exact_and_immutable():
