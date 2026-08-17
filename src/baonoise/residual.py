@@ -183,13 +183,36 @@ def _month_of(ctime: np.ndarray) -> np.ndarray:
                      for x in ctime])
 
 
-def _on_epoch(d, off_through: str | None, trim_percentile: float | None):
+def _epoch_time_masks(month: np.ndarray, off_through: str | None,
+                      off_from: str | None):
+    """(on, off) time masks from a transmitter epoch specification.
+
+    ``off_through`` is the last ``YYYY-MM`` of an off epoch that *precedes*
+    the on epoch (a sign-on channel); ``off_from`` is the first ``YYYY-MM``
+    of an off epoch that *follows* it (a sign-off channel). At most one may
+    be given; with neither there is no epoch information and both masks are
+    ``None``.
+    """
+    if off_through is not None and off_from is not None:
+        raise ValueError("give at most one of off_through / off_from; a "
+                         "channel with off epochs on both sides needs the "
+                         "on epoch split into two products")
+    if off_through is not None:
+        return month > off_through, month <= off_through
+    if off_from is not None:
+        return month < off_from, month >= off_from
+    return None, None
+
+
+def _on_epoch(d, off_through: str | None, trim_percentile: float | None,
+              off_from: str | None = None):
     """Transmitter-on frames, optionally with the burst tail trimmed.
 
     Gating on ``reject_mask`` is what makes this a transmitter-on selection
     without needing an off epoch: a rejected frame carries a positive pilot
-    excess, so the shelf is demonstrably there. ``off_through`` narrows it
-    further when a clean off epoch is known.
+    excess, so the shelf is demonstrably there. ``off_through`` (sign-on
+    channels) or ``off_from`` (sign-off channels) narrows it further when a
+    clean off epoch is known.
 
     Trimming matters for intermittent transmitters. On a channel whose shelf is
     a quiet baseline punctuated by strong bursts, the linear-power moments are
@@ -205,8 +228,9 @@ def _on_epoch(d, off_through: str | None, trim_percentile: float | None):
     t0 = d["unit_time0_ctime"]
 
     on = valid & rejected & np.isfinite(shelf)
-    if off_through is not None:
-        on &= _month_of(t0)[unit] > off_through
+    if off_through is not None or off_from is not None:
+        on_t, _ = _epoch_time_masks(_month_of(t0)[unit], off_through, off_from)
+        on &= on_t
     if on.sum() and trim_percentile is not None:
         on &= shelf <= np.percentile(shelf[on], trim_percentile)
     return on, shelf, unit, t0
@@ -257,13 +281,17 @@ def _nested_split(lin, unit, t0):
 
 def shelf_statistics(npz_path: str | Path, off_through: str | None = None,
                      floor_percentile: float = 90.0,
-                     trim_percentile: float | None = 90.0) -> ShelfStatistics:
+                     trim_percentile: float | None = 90.0,
+                     off_from: str | None = None) -> ShelfStatistics:
     """Measure the residual chain's data-driven terms from a survey product.
 
     ``off_through`` is the last ``YYYY-MM`` of a transmitter-off epoch for this
-    channel; frames at or before it define the sensitivity floor. Without one
-    the floor is taken from frames the detector *kept*, which is a weaker bound
-    (it is the floor only where the pilot estimate stayed positive).
+    channel; frames at or before it define the sensitivity floor. For a
+    sign-off channel, whose off epoch *follows* the on epoch, pass
+    ``off_from`` (the first off month) instead; at most one of the two may be
+    given. Without either, the floor is taken from frames the detector
+    *kept*, which is a weaker bound (it is the floor only where the pilot
+    estimate stayed positive).
 
     The power split is a three-level nested variance decomposition of the
     linear shelf over the transmitter-on epoch, keyed on sidereal day and
@@ -289,8 +317,9 @@ def shelf_statistics(npz_path: str | Path, off_through: str | None = None,
     t0 = d["unit_time0_ctime"]
     month = _month_of(t0)[unit]
 
-    if off_through is not None:
-        off = valid & (month <= off_through)
+    if off_through is not None or off_from is not None:
+        _, off_t = _epoch_time_masks(month, off_through, off_from)
+        off = valid & off_t
     else:
         off = valid & ~rejected
 
@@ -300,7 +329,7 @@ def shelf_statistics(npz_path: str | Path, off_through: str | None = None,
     else:
         floor_db = float(np.percentile(shelf[finite_off], floor_percentile))
 
-    on, _, _, _ = _on_epoch(d, off_through, trim_percentile)
+    on, _, _, _ = _on_epoch(d, off_through, trim_percentile, off_from=off_from)
     on_db = float(np.median(shelf[on])) if on.sum() else float("nan")
 
     dc = interday = intraday = fast = float("nan")
@@ -463,8 +492,8 @@ def _tau_from_structure(centers, values, plateau):
     return float(x0 + (target - y0) * (x1 - x0) / (y1 - y0))
 
 
-def _measure_at_trim(d, off_through, trim):
-    on, shelf, unit, t0 = _on_epoch(d, off_through, trim)
+def _measure_at_trim(d, off_through, trim, off_from=None):
+    on, shelf, unit, t0 = _on_epoch(d, off_through, trim, off_from=off_from)
     if on.sum() < 100:
         return None
     split = _nested_split(10.0 ** (shelf[on] / 10.0), unit[on], t0)
@@ -483,7 +512,8 @@ def correlation_time(npz_path: str | Path, off_through: str | None = None,
                      trim_percentile: float = 90.0,
                      trim_probes=TRIM_PROBES, max_trim_spread: float = 2.0,
                      min_days: int = 100, min_pairs: int = 200,
-                     n_boot: int = 200, seed: int = 20260807) -> CorrelationTime:
+                     n_boot: int = 200, seed: int = 20260807,
+                     off_from: str | None = None) -> CorrelationTime:
     """Measure the intra-day correlation time, or refuse and say why.
 
     The estimator is a noise-corrected same-sidereal-day structure function of
@@ -515,7 +545,7 @@ def correlation_time(npz_path: str | Path, off_through: str | None = None,
 
     probes = {}
     for tp in trim_probes:
-        r = _measure_at_trim(d, off_through, tp)
+        r = _measure_at_trim(d, off_through, tp, off_from=off_from)
         if r is not None and np.isfinite(r["tau"]) and r["surviving"] > 0:
             probes[tp] = r
 
@@ -532,7 +562,7 @@ def correlation_time(npz_path: str | Path, off_through: str | None = None,
     trim_spread = float(taus.max() / taus.min())
     surv_spread = float(survs.max() / survs.min())
 
-    main = _measure_at_trim(d, off_through, trim_percentile)
+    main = _measure_at_trim(d, off_through, trim_percentile, off_from=off_from)
     if main is None or not np.isfinite(main["tau"]):
         return refuse("no finite estimate at the requested trim",
                       trim_spread, surv_spread)
@@ -935,11 +965,14 @@ def n_coh_from_correlation_time(tau_c_seconds: float,
 
 def residuals_from_products(paths, off_through=None, delay_key=DEFAULT_DELAY_KEY,
                             floor_percentile: float = 90.0,
-                            trim_percentile: float = 90.0, **ct_kwargs):
+                            trim_percentile: float = 90.0,
+                            off_from=None, **ct_kwargs):
     """Per-channel ``{channel: r}`` plus the statistics and correlation times.
 
-    ``off_through`` may be a single ``YYYY-MM`` applied to every product, or a
-    ``{channel: 'YYYY-MM'}`` mapping. Channels with no measurable shelf floor
+    ``off_through`` (sign-on channels) and ``off_from`` (sign-off channels)
+    may each be a single ``YYYY-MM`` applied to every product, or a
+    ``{channel: 'YYYY-MM'}`` mapping; a given channel may carry at most one
+    of the two. Channels with no measurable shelf floor
     are omitted rather than defaulted; channels whose correlation time is
     refused are included at the conservative cap and flagged by
     ``corrs[ch].is_measured``.
@@ -950,8 +983,10 @@ def residuals_from_products(paths, off_through=None, delay_key=DEFAULT_DELAY_KEY
                                 floor_percentile=floor_percentile)
         ot = (off_through.get(head.channel) if isinstance(off_through, dict)
               else off_through)
+        of = (off_from.get(head.channel) if isinstance(off_from, dict)
+              else off_from)
         budget, st, ct = budget_from_products(
-            p, off_through=ot, delay_key=delay_key,
+            p, off_through=ot, off_from=of, delay_key=delay_key,
             floor_percentile=floor_percentile,
             trim_percentile=trim_percentile, **ct_kwargs)
         stats[st.channel] = st
@@ -964,6 +999,7 @@ def budget_from_products(npz_path: str | Path, off_through: str | None = None,
                          delay_key: str = DEFAULT_DELAY_KEY,
                          floor_percentile: float = 90.0,
                          trim_percentile: float = 90.0,
+                         off_from: str | None = None,
                          **ct_kwargs):
     """One call: shelf statistics, correlation time, and the assembled budget.
 
@@ -974,9 +1010,11 @@ def budget_from_products(npz_path: str | Path, off_through: str | None = None,
     """
     stats = shelf_statistics(npz_path, off_through=off_through,
                              floor_percentile=floor_percentile,
-                             trim_percentile=trim_percentile)
+                             trim_percentile=trim_percentile,
+                             off_from=off_from)
     corr = correlation_time(npz_path, off_through=off_through,
-                            trim_percentile=trim_percentile, **ct_kwargs)
+                            trim_percentile=trim_percentile,
+                            off_from=off_from, **ct_kwargs)
     if corr.is_usable:
         budget = budget_from_statistics(stats, delay_key,
                                         tau_intraday=corr.tau_c,
@@ -1306,13 +1344,16 @@ def mask_benefit(channel, f, r_unmasked, r_masked) -> MaskDecision:
 def threshold_sweep(npz_path, off_through=None, etas=None,
                     delay_key=DEFAULT_DELAY_KEY, floor_percentile=90.0,
                     tau_intraday=None, floor_db=None,
-                    min_kept: int = MIN_THRESHOLD_SWEEP_KEPT_FRAMES):
+                    min_kept: int = MIN_THRESHOLD_SWEEP_KEPT_FRAMES,
+                    off_from=None):
     """(eta, f, kept-shelf dB, r, net) as the coarse threshold F > eta*mu0 moves.
 
     This is what the framework exists to compute: the detector's operating
     point mapped onto a science decision. Frames with no pilot detection have
     no shelf measurement, so they are bounded at the transmitter-off
     sensitivity floor, an upper bound that makes the result conservative.
+    The off epoch is ``off_through`` for a sign-on channel or ``off_from``
+    for a sign-off channel (at most one).
 
     ``floor_db`` supplies that bound explicitly when the product cannot: on a
     channel whose mu0 < 1 the interval 1 < F <= mu0 is empty and no kept frame
@@ -1331,9 +1372,10 @@ def threshold_sweep(npz_path, off_through=None, etas=None,
     t0 = d["unit_time0_ctime"]
     month = _month_of(t0)[d["frame_unit_index"]]
 
-    if off_through is not None:
-        on = valid & (month > off_through)
-        off = valid & (month <= off_through)
+    if off_through is not None or off_from is not None:
+        on_t, off_t = _epoch_time_masks(month, off_through, off_from)
+        on = valid & on_t
+        off = valid & off_t
     else:
         on, off = valid, valid & ~d["reject_mask"][:, 0].astype(bool)
     fin_off = off & np.isfinite(shelf)
@@ -1347,8 +1389,10 @@ def threshold_sweep(npz_path, off_through=None, etas=None,
                    10.0 ** (floor_db / 10.0))
 
     stats = shelf_statistics(npz_path, off_through=off_through,
-                             floor_percentile=floor_percentile)
-    corr = correlation_time(npz_path, off_through=off_through)
+                             floor_percentile=floor_percentile,
+                             off_from=off_from)
+    corr = correlation_time(npz_path, off_through=off_through,
+                            off_from=off_from)
     tau = tau_intraday if tau_intraday is not None else corr.tau_for_budget
     n_slow = n_coh_from_correlation_time(tau)
     comps_for = lambda db: ((stats.intraday_fraction, n_slow),

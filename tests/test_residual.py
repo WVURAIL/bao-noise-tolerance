@@ -271,6 +271,98 @@ def _write_product(path, shelf_db, unit_of_frame, unit_t0, channel=35,
     return path
 
 
+def _epoch_product(tmp_path, name, on_first: bool):
+    """One frame per unit: an on epoch at -10 dB and an off epoch at -40 dB.
+
+    ``on_first=True`` is a sign-off channel (on through 2020-12, off from
+    2021-01); ``on_first=False`` is the time-mirrored sign-on channel.
+    """
+    import datetime as _dt
+    rng = np.random.default_rng(7)
+    n = 300
+    on_shelf = -10.0 + 0.1 * rng.standard_normal(n)
+    off_shelf = -40.0 + 0.1 * rng.standard_normal(n)
+    t_on = _dt.datetime(2020, 6, 1, tzinfo=_dt.timezone.utc).timestamp() \
+        + np.arange(n) * 3600.0
+    t_off = _dt.datetime(2021, 6, 1, tzinfo=_dt.timezone.utc).timestamp() \
+        + np.arange(n) * 3600.0
+    if on_first:
+        shelf = np.concatenate([on_shelf, off_shelf])
+        t0 = np.concatenate([t_on, t_off])
+        rejected = np.r_[np.ones(n), np.zeros(n)].astype(np.uint8)
+    else:
+        shelf = np.concatenate([off_shelf, on_shelf])
+        t0 = np.concatenate([t_off - 2 * 366 * 86400.0, t_on])
+        rejected = np.r_[np.zeros(n), np.ones(n)].astype(np.uint8)
+    return _write_product(tmp_path / name, shelf,
+                          np.arange(2 * n), t0, rejected=rejected)
+
+
+def test_off_from_mirrors_off_through(tmp_path):
+    """A sign-off channel calibrates exactly like its time-mirrored sign-on."""
+    signoff = _epoch_product(tmp_path, "signoff.npz", on_first=True)
+    signon = _epoch_product(tmp_path, "signon.npz", on_first=False)
+    a = residual.shelf_statistics(signoff, off_from="2021-01")
+    b = residual.shelf_statistics(signon, off_through="2020-05")
+    assert a.floor_db == pytest.approx(b.floor_db, abs=0.05)
+    assert a.floor_db == pytest.approx(-40.0, abs=0.5)
+    assert a.on_shelf_db == pytest.approx(-10.0, abs=0.5)
+    # without the epoch, the off sample is empty (every on frame is rejected,
+    # every off frame kept) and the floor comes from the kept frames instead
+    c = residual.shelf_statistics(signoff)
+    assert c.floor_db == pytest.approx(-40.0, abs=0.5)
+
+
+def test_off_epoch_specs_are_mutually_exclusive(tmp_path):
+    p = _epoch_product(tmp_path, "signoff.npz", on_first=True)
+    with pytest.raises(ValueError, match="at most one"):
+        residual.shelf_statistics(p, off_through="2020-12", off_from="2021-01")
+    with pytest.raises(ValueError, match="at most one"):
+        residual.correlation_time(p, off_through="2020-12", off_from="2021-01")
+
+
+def test_threshold_sweep_accepts_off_from(tmp_path):
+    import datetime as _dt
+    rng = np.random.default_rng(11)
+    units, fpu = 100, 3        # per epoch: 100 acquisitions x 3 frames
+    n = units * fpu
+    shelf = np.concatenate([-10.0 + 0.1 * rng.standard_normal(n),
+                            -40.0 + 0.1 * rng.standard_normal(n)])
+    # on epoch: 60 strong units (F=50) over 40 weak ones (F=2)
+    F = np.concatenate([np.full(60 * fpu, 50.0), np.full(40 * fpu, 2.0),
+                        np.full(n, 1.0)])
+    rejected = np.r_[np.ones(n), np.zeros(n)].astype(np.uint8)
+    uof = np.concatenate([np.repeat(np.arange(units), fpu),
+                          np.repeat(np.arange(units, 2 * units), fpu)])
+    t0 = np.concatenate([
+        _dt.datetime(2020, 6, 1, tzinfo=_dt.timezone.utc).timestamp()
+        + np.arange(units) * 3600.0,
+        _dt.datetime(2021, 6, 1, tzinfo=_dt.timezone.utc).timestamp()
+        + np.arange(units) * 3600.0])
+    np.savez(
+        tmp_path / "sweep_signoff.npz",
+        valid=np.ones((2 * n, 1), dtype=np.uint8),
+        reject_mask=rejected.reshape(-1, 1),
+        snr_shelf_db=shelf.reshape(-1, 1),
+        fstat_raw=F.reshape(-1, 1),
+        mu0=np.array([1.0]),
+        frame_unit_index=uof.astype(np.int32),
+        unit_time0_ctime=t0,
+        physical_channel=np.array([19], dtype=np.int32),
+        freq_id=np.array([767], dtype=np.int64),
+        chime_frequency_hz=np.array([500.39e6]),
+    )
+    sweep = residual.threshold_sweep(tmp_path / "sweep_signoff.npz",
+                                     off_from="2021-01")
+    assert sweep, "sweep must not be empty with an off_from epoch"
+    assert all(np.isfinite(row["net"]) for row in sweep)
+    # thresholds between the two on-epoch F populations mask the strong 60%
+    mid = [r for r in sweep if 2.5 <= r["eta"] <= 40.0]
+    assert mid and all(r["f"] == pytest.approx(0.6, abs=0.01) for r in mid)
+    # thresholds above every F keep everything
+    assert sweep[-1]["f"] == pytest.approx(0.0, abs=1e-6)
+
+
 def _stationary_product(tmp_path, tau_true, n_days=400, per_day=6,
                         frames_per_unit=6, seed=1):
     """Shelf = constant + slow day offset + AR(1) intra-day term + noise."""
