@@ -156,3 +156,28 @@ def test_threshold_curve_preserves_orderable_string_labels():
     result = api.threshold_curve(Forecast(), points)
     assert result["eta"].tolist() == ["loose", "strict"]
     assert result["best_eta"] in points
+
+
+def test_scenario_passthrough_is_identity():
+    sc = scenarios.uniform(0.3, scenarios.DTV_BAND)
+    assert api.scenario_from(sc) is sc
+
+
+def test_scenario_passthrough_refuses_overrides():
+    """A Scenario carries its own policy; overrides beside it would be
+    silently ignored, so they are refused instead."""
+    sc = scenarios.uniform(0.3, scenarios.DTV_BAND)
+    for kw in (dict(residual=0.5), dict(residuals={35: 0.5}),
+               dict(excise_threshold=0.5), dict(mode="fourier"),
+               dict(residual_excise_threshold=10.0)):
+        with pytest.raises(ValueError, match="its own policy"):
+            api.scenario_from(sc, **kw)
+    with pytest.raises(ValueError, match="exactly one"):
+        api.scenario_from(sc, uniform=0.5)
+
+
+def test_required_time_accepts_a_scenario():
+    fc = api.load()
+    out = api.required_time(fc, mask=scenarios.clean(), target=5.0)
+    assert np.isfinite(out["hours"])
+    assert out["penalty_vs_clean"] == pytest.approx(1.0)

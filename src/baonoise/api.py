@@ -58,6 +58,12 @@ def scenario_from(mask=None, uniform=None, band: _scenarios.FrequencyBand =
     """Build a Scenario from either a {channel: masked_fraction} dict or a
     uniform masked fraction over an explicit :class:`FrequencyBand`.
 
+    ``mask`` also accepts a prebuilt :class:`baonoise.scenarios.Scenario`
+    (from :func:`scenarios.measured`, :func:`scenarios.at_threshold`, ...),
+    which passes through unchanged. A Scenario already carries its own
+    policy, so combining one with the other arguments here would silently
+    ignore half of it; that combination is refused.
+
     ``residuals`` ({channel: r}) is available with a per-channel ``mask``;
     ``residual`` adds one uniform ratio to a frequency-band scenario.
 
@@ -70,6 +76,16 @@ def scenario_from(mask=None, uniform=None, band: _scenarios.FrequencyBand =
     """
     if (mask is None) == (uniform is None):
         raise ValueError("provide exactly one of mask= or uniform=")
+    if isinstance(mask, _scenarios.Scenario):
+        overridden = (excise_threshold is not None or residuals is not None
+                      or float(residual) != 0.0 or mode != "time"
+                      or np.isfinite(residual_excise_threshold))
+        if overridden:
+            raise ValueError(
+                "mask= is already a Scenario carrying its own policy; build "
+                "the overrides into the Scenario instead of passing them "
+                "alongside it")
+        return mask
     residual = _scenarios._residual(residual, "residual")
     if residuals is not None and residual != 0.0:
         raise ValueError("provide at most one of residuals= or residual=")
