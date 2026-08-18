@@ -242,12 +242,13 @@ def test_channel_and_frequency_band_masks_must_not_overlap():
 # ----------------------------------------------------------------------
 
 def _product(path, channel, masked, n=400, kernel="aaaa", pkg="pp/1.0.0",
-             months=None, rejected=None):
+             months=None, rejected=None, fstat=None, mu0=1.0):
     """Minimal survey product carrying a detector contract.
 
     ``months`` (one ``YYYY-MM`` per frame) adds unit timestamps so the
     product can be windowed; ``rejected`` overrides the fraction-derived
-    reject mask frame by frame.
+    reject mask frame by frame; ``fstat`` adds the stored coarse statistic
+    so the product can be rethresholded at eta != 1.
     """
     import datetime as dt
     import json
@@ -272,6 +273,10 @@ def _product(path, channel, masked, n=400, kernel="aaaa", pkg="pp/1.0.0",
             .replace(tzinfo=dt.timezone.utc).timestamp() for m in months])
         arrays["unit_time0_ctime"] = t0
         arrays["frame_unit_index"] = np.arange(n, dtype=np.int32)
+    if fstat is not None:
+        assert len(fstat) == n
+        arrays["fstat_raw"] = np.asarray(fstat, dtype=float).reshape(n, 1)
+        arrays["mu0"] = np.array([mu0])
     np.savez(path, **arrays)
     return path
 
@@ -376,8 +381,47 @@ def test_windowed_scenario_carries_the_window(tmp_path):
     assert "2025-01" in sc.label
     with pytest.raises(ValueError, match="require products"):
         scenarios.measured(since="2025-01")
-    with pytest.raises(ValueError, match="two epochs"):
+    with pytest.raises(ValueError, match="two decisions"):
         scenarios.measured(products=[p], fill_missing="csv", since="2025-01")
+
+
+def test_eta_rethresholds_from_the_stored_statistic(tmp_path):
+    """A sign-off channel at eta=1 stays masked on faint residual excess;
+    a threshold above the residual population frees it."""
+    F = np.r_[np.full(100, 50.0),    # transmitter-on frames
+              np.full(300, 1.02)]    # faint residual excess, F barely > mu0
+    rej = (F > 1.0).astype(np.uint8)
+    p = _product(tmp_path / "e.npz", 19, 1.0, rejected=rej, fstat=F)
+    deployed = chn.mask_table_from_products([p])
+    assert deployed.fractions[19] == pytest.approx(1.0)
+    thresholded = chn.mask_table_from_products([p], eta=1.4)
+    assert thresholded.fractions[19] == pytest.approx(0.25)
+    assert "eta=1.4" in thresholded.source
+    assert "rethresholded" in thresholded.rule
+    assert thresholded.is_traceable
+
+
+def test_eta_requires_the_statistic_and_coarse_stage(tmp_path):
+    bare = _product(tmp_path / "bare.npz", 19, 0.5)
+    with pytest.raises(ValueError, match="fstat_raw"):
+        chn.mask_table_from_products([bare], eta=1.4)
+    with pytest.raises(ValueError, match="stage"):
+        chn.mask_table_from_products([bare], eta=1.4, stage="fine")
+    with pytest.raises(ValueError, match="positive"):
+        chn.mask_table_from_products([bare], eta=0.0)
+
+
+def test_eta_scenario_carries_the_threshold(tmp_path):
+    F = np.r_[np.full(100, 50.0), np.full(300, 1.02)]
+    p = _product(tmp_path / "e.npz", 19, 1.0,
+                 rejected=(F > 1.0).astype(np.uint8), fstat=F)
+    sc = scenarios.measured(products=[p], fill_missing="omit", eta=1.4)
+    assert sc.fractions[19] == pytest.approx(0.25)
+    assert "eta=1.4" in sc.label
+    with pytest.raises(ValueError, match="require products"):
+        scenarios.measured(eta=1.4)
+    with pytest.raises(ValueError, match="two decisions"):
+        scenarios.measured(products=[p], fill_missing="csv", eta=1.4)
 
 
 def test_compare_mask_tables_orders_by_disagreement():

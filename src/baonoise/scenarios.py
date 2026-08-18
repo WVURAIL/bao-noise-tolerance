@@ -341,7 +341,8 @@ def measured(rates_csv=None, refused_fraction: float = chn.REFUSED_FRACTION,
              residuals: dict[int, float] | None = None,
              residual_excise_threshold: float = NO_EXCISION_THRESHOLD,
              products=None, fill_missing: str = "error",
-             since: str | None = None, until: str | None = None) -> Scenario:
+             since: str | None = None, until: str | None = None,
+             eta: float = 1.0) -> Scenario:
     """Fiducial: pilot-proxy exposure-weighted rates; refused ch24/30 excised.
 
     ``residuals`` optionally adds the contamination that survives the mask
@@ -360,18 +361,23 @@ def measured(rates_csv=None, refused_fraction: float = chn.REFUSED_FRACTION,
     ``since <= YYYY-MM <= until`` (see
     :func:`baonoise.channels.mask_table_from_products`): a forward-looking
     forecast wants the epoch that still describes the sky, not a fraction
-    averaged over transmitters that have since signed off. They require
-    ``products`` and the scenario label carries the window.
+    averaged over transmitters that have since signed off. ``eta``
+    rethresholds the coarse fractions at ``F > eta * mu0`` from the stored
+    statistic — the deployed ``eta = 1`` rule fires on faint residual signal
+    even where a transmitter has signed off, so windowing alone cannot lower
+    those channels' fractions. Both require ``products`` and the scenario
+    label carries them.
     """
-    if (since is not None or until is not None) and products is None:
+    reworked = since is not None or until is not None or float(eta) != 1.0
+    if reworked and products is None:
         raise ValueError(
-            "since/until window product fractions and require products=; the "
-            "vendored CSV is quarterly and cannot be re-windowed here")
-    if (since is not None or until is not None) and fill_missing == "csv":
+            "since/until/eta rework product fractions and require products=; "
+            "the vendored CSV records neither timestamps nor the statistic")
+    if reworked and fill_missing == "csv":
         raise ValueError(
-            "fill_missing='csv' would put full-span CSV fractions beside "
-            "windowed product fractions — two epochs in one table; use "
-            "'omit' or cover the missing channels with products")
+            "fill_missing='csv' would put deployed full-span CSV fractions "
+            "beside reworked product fractions — two decisions in one "
+            "table; use 'omit' or cover the missing channels with products")
     kw = {} if rates_csv is None else {"rates_csv": rates_csv}
     table = chn.measured_mask_table(refused_fraction=refused_fraction, **kw)
     label, name = "Measured pilot-proxy masking", "measured"
@@ -379,7 +385,7 @@ def measured(rates_csv=None, refused_fraction: float = chn.REFUSED_FRACTION,
     if products is not None:
         prod = chn.mask_table_from_products(products,
                                             refused_fraction=refused_fraction,
-                                            since=since, until=until)
+                                            since=since, until=until, eta=eta)
         missing = sorted(set(table.fractions) - set(prod.fractions))
         if missing and fill_missing == "error":
             raise ValueError(
@@ -402,6 +408,8 @@ def measured(rates_csv=None, refused_fraction: float = chn.REFUSED_FRACTION,
             raise ValueError(f"unknown fill_missing: {fill_missing!r}")
         if prod.window != "full span":
             label += f" [{prod.window}]"
+        if float(eta) != 1.0:
+            label += f" [eta={float(eta):g}]"
     else:
         fr = table.fractions
 

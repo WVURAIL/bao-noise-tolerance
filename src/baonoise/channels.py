@@ -134,7 +134,8 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
                              require_same_detector: bool = True,
                              stage: str = "coarse",
                              since: str | None = None,
-                             until: str | None = None) -> MaskTable:
+                             until: str | None = None,
+                             eta: float = 1.0) -> MaskTable:
     """Masked fractions straight from the survey products.
 
     ``since``/``until`` restrict the fractions to frames in UTC months
@@ -147,6 +148,16 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
     (with a note) rather than reported from the wrong epoch. Products that
     carry no unit timestamps cannot be windowed and are refused when a window
     is requested.
+
+    ``eta`` recomputes the coarse fractions at the threshold
+    ``F > eta * mu0`` from the product's stored statistic instead of
+    reporting the shipped ``reject_mask`` (the deployed ``eta = 1``
+    zero-excess rule). The deployed rule fires on faint residual signal even
+    where a transmitter has signed off, so an epoch window alone cannot
+    lower those channels' fractions; the threshold can. Requires
+    ``fstat_raw`` and ``mu0`` in every product and ``stage='coarse'``; the
+    recomputation is recorded in the table's rule so an ``eta != 1`` table
+    can never be mistaken for the detector's own decision.
 
     ``stage`` picks which decision to report, and the returned table names it,
     because the pipeline makes more than one and they differ by two orders of
@@ -172,6 +183,13 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
     product predates a release, which is worth knowing but does not change
     what F was computed to be.
     """
+    eta = float(eta)
+    if eta <= 0.0:
+        raise ValueError(f"eta must be positive, got {eta}")
+    if eta != 1.0 and stage != "coarse":
+        raise ValueError(
+            "eta rethresholds the coarse statistic F; it does not apply to "
+            f"stage={stage!r}")
     windowed = since is not None or until is not None
     window = ("full span" if not windowed
               else f"{since or 'start'}..{until or 'end'}")
@@ -193,7 +211,15 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
                 valid = valid & (month >= since)
             if until is not None:
                 valid = valid & (month <= until)
-        if stage == "coarse":
+        if eta != 1.0:
+            if "fstat_raw" not in d or "mu0" not in d:
+                raise ValueError(
+                    f"{Path(p).name} carries no fstat_raw/mu0, so its "
+                    f"fractions cannot be rethresholded; drop eta or "
+                    f"regenerate the product with the statistic")
+            rejected = (d["fstat_raw"][:, 0]
+                        > eta * float(np.asarray(d["mu0"]).ravel()[0]))
+        elif stage == "coarse":
             rejected = d["reject_mask"][:, 0].astype(bool)
         elif stage == "fine":
             if "fine_detected_count" not in d:
@@ -215,7 +241,10 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
         seen[ch] = Path(p)
         fractions[ch] = float(rejected[valid].mean())
         n_frames[ch] = int(valid.sum())
-        if stage == "fine":
+        if eta != 1.0:
+            rules.add(f"F > {eta:g}*mu0 (rethresholded from fstat_raw; "
+                      f"deployed decision is F > mu0)")
+        elif stage == "fine":
             pfa = float(d["fine_p_fa"]) if "fine_p_fa" in d else float("nan")
             rules.add(f"fine rank-CFAR detection (p_fa={pfa:g})")
         else:
@@ -255,8 +284,10 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
             fractions[ch] = refused_fraction
             notes.append(f"ch{ch} refused by pilot-proxy; assumed "
                          f"{refused_fraction:g} masked rather than measured")
+    src = (f"products[coarse@eta={eta:g}]" if eta != 1.0
+           else f"products[{stage}]")
     return MaskTable(fractions=dict(sorted(fractions.items())),
-                     source=f"products[{stage}]", rule=sorted(rules)[0],
+                     source=src, rule=sorted(rules)[0],
                      detector_version="+".join(sorted(packages))
                      + f" kernel={sorted(kernels)[0][:12]}",
                      n_frames=n_frames, notes=notes, window=window)
