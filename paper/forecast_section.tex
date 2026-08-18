@@ -418,15 +418,15 @@ $z=2.43$. They reproduce the percent-level scale and redshift
 dependence of the ideal-CHIME error bars in Fig.~31 of
 \citet{CHIMEOverview2022} using the same instrument, cosmology,
 binning, information flags, and marginalisation. The corresponding
-forecast survey-level BAO-amplitude signal-to-noise ratio is 48.80 at
+forecast survey-level BAO-amplitude signal-to-noise ratio is 48.84 at
 one on-sky year, and the clean survey-level $(S/N)_A=5$ target requires
-208.9 on-sky hours. These machine-readable values are used as the
+208.8 on-sky hours. These machine-readable values are used as the
 no-mask regression product; masking is not allowed to change bins
 outside its frequency support.
 
 For the pilot-proxy-derived configuration, $\sigma(D_V)/D_V$ at
-$z=1.45$ increases from 0.61 to 0.732 per cent, and at $z=1.65$ from
-0.706 to 0.853 per cent. Bins outside the DTV redshift range are
+$z=1.45$ increases from 0.61 to 0.733 per cent, and at $z=1.65$ from
+0.706 to 0.852 per cent. Bins outside the DTV redshift range are
 unchanged.
 
 \subsection{Results}
@@ -457,15 +457,15 @@ from the fiducial inverse-variance result.}
 \toprule
 Scenario & $(S/N)_A(2\,\mathrm{yr})$ & $t/t_\mathrm{clean}$ \\
 \midrule
-No masking & 63.51 & 1.000 \\
-Pilot-proxy-derived & 61.89 (61.83) & 1.032 (1.034) \\
-25\% of DTV band masked & 60.95 & 1.075 \\
-50\% of DTV band masked & 57.82 & 1.151 \\
-75\% of DTV band masked & 53.84 & 1.218 \\
-97\% of DTV band masked & 49.65 & 1.254 \\
-50\% of entire band masked & 48.80 & 2.000 \\
-ch30 excised & 62.95 & 1.008 \\
-ch30 retained & 63.12 (60.20) & 1.013 (1.064) \\
+No masking & 63.57 & 1.000 \\
+Pilot-proxy-derived & 61.96 (61.89) & 1.032 (1.034) \\
+25\% of DTV band masked & 60.98 & 1.076 \\
+50\% of DTV band masked & 57.88 & 1.152 \\
+75\% of DTV band masked & 53.89 & 1.219 \\
+97\% of DTV band masked & 49.70 & 1.256 \\
+50\% of entire band masked & 48.84 & 2.000 \\
+ch30 excised & 63.02 & 1.008 \\
+ch30 retained & 63.19 (60.26) & 1.013 (1.064) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -482,12 +482,12 @@ Overview forecast normalisation. No calendar-duty factor is assumed.}
 \toprule
 $z$ bin & Scenario & $(S/N)_{A,b}=5$ & $\sigma(D_A)\le2\%$ \\
 \midrule
-1.40--1.50 & clean & 0.174\,yr & 0.315\,yr \\
+1.40--1.50 & clean & 0.175\,yr & 0.315\,yr \\
 1.40--1.50 & pilot-proxy & 0.235\,yr & 0.421\,yr \\
-1.40--1.50 & pilot-proxy (F) & 0.236\,yr & 0.424\,yr \\
-1.40--1.50 & 50\% DTV masked & 0.349\,yr & 0.629\,yr \\
-1.40--1.50 & ch30 retained (F) & 1.088\,yr & 1.963\,yr \\
-1.40--1.50 & ch30 excised & 0.200\,yr & 0.359\,yr \\
+1.40--1.50 & pilot-proxy (F) & 0.237\,yr & 0.424\,yr \\
+1.40--1.50 & 50\% DTV masked & 0.350\,yr & 0.629\,yr \\
+1.40--1.50 & ch30 retained (F) & 1.091\,yr & 1.963\,yr \\
+1.40--1.50 & ch30 excised & 0.201\,yr & 0.359\,yr \\
 1.60--1.70 & clean & 0.209\,yr & 0.411\,yr \\
 1.60--1.70 & pilot-proxy & 0.286\,yr & 0.547\,yr \\
 \bottomrule
@@ -514,7 +514,7 @@ near-persistent channels are excised. Most of the cost comes from the
 excised bandwidth and the channels with $f\gtrsim0.1$, not from the
 channels masked at the one-to-few per cent level.
 
-Uniformly masking half of the DTV band gives a 15.1 per cent
+Uniformly masking half of the DTV band gives a 15.2 per cent
 survey-level penalty. In the $z=1.40$--$1.50$ bin, which lies wholly
 inside the DTV band, the 2 per cent $D_A$ target doubles from 0.315 to
 0.629 on-sky years, as expected for uniform 50 per cent masking in the
@@ -582,8 +582,8 @@ instrument, astrophysical profile, physical-density convention,
 power-spectrum generator, and RadioFisher 1.0 backend contract. This matched
 comparison separates a change of fiducial cosmology from changes in the
 implementation. The clean survey-level five-sigma time changes from
-208.9 to 187.0 on-sky hours ($-10.5$ per cent), whereas the masking
-penalty changes by at most 0.225 per cent across the scenarios and metrics
+208.8 to 186.9 on-sky hours ($-10.5$ per cent), whereas the masking
+penalty changes by at most 0.420 per cent across the scenarios and metrics
 tabulated here. Thus the fiducial cosmology materially changes the absolute
 normalisation but has negligible effect on the relative masking cost.
 

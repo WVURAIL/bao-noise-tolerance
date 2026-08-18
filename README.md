@@ -141,8 +141,8 @@ Planck-2018 and P-ACT-LB strict-v2 CHIME banks. The source repository also
 keeps matched-grid strict-v2 Bull-2015 banks at $\epsilon_{FG}=10^{-6}$ and
 $10^{-5}$ for the foreground sensitivity check; these are research comparison
 artifacts rather than installed defaults. In the matched cosmology comparison,
-the clean five-sigma time is 208.9 hours for Planck-2018 and 187.0 hours for
-P-ACT-LB, while relative masking penalties differ by at most 0.225%. In the
+the clean five-sigma time is 208.8 hours for Planck-2018 and 186.9 hours for
+P-ACT-LB, while relative masking penalties differ by at most 0.420%. In the
 Bull-2015 foreground check, raising $\epsilon_{FG}$ by a factor of ten changes
 the clean survey time by 3.3% and the tested survey-level masking penalties by
 at most 0.43%.

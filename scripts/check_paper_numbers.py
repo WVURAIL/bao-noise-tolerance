@@ -82,38 +82,38 @@ def main() -> int:
     pen = lambda s: float(rt[s]["time_penalty_vs_clean"])
 
     print("-- Table 2: survey level --")
-    ck.check("clean (S/N)_A at 2 yr", sig("clean"), "63.51", 2)
-    ck.check("pilot-proxy (S/N)_A at 2 yr", sig("measured"), "61.89", 2)
-    ck.check("pilot-proxy Fourier (S/N)_A", sig("measured_fourier"), "61.83", 2)
-    ck.check("uniform 25% DTV (S/N)_A", sig("uniform25_dtv"), "60.95", 2)
-    ck.check("uniform 50% DTV (S/N)_A", sig("uniform50_dtv"), "57.82", 2)
-    ck.check("uniform 75% DTV (S/N)_A", sig("uniform75_dtv"), "53.84", 2)
-    ck.check("uniform 97% DTV (S/N)_A", sig("uniform97_dtv"), "49.65", 2)
-    ck.check("uniform 50% whole band (S/N)_A", sig("uniform50_chime"), "48.80", 2)
-    ck.check("ch30 excised (S/N)_A", sig("ch30_excised"), "62.95", 2)
-    ck.check("ch30 retained (S/N)_A", sig("ch30_kept"), "63.12", 2)
-    ck.check("ch30 retained Fourier (S/N)_A", sig("ch30_kept_fourier"), "60.20", 2)
+    ck.check("clean (S/N)_A at 2 yr", sig("clean"), "63.57", 2)
+    ck.check("pilot-proxy (S/N)_A at 2 yr", sig("measured"), "61.96", 2)
+    ck.check("pilot-proxy Fourier (S/N)_A", sig("measured_fourier"), "61.89", 2)
+    ck.check("uniform 25% DTV (S/N)_A", sig("uniform25_dtv"), "60.98", 2)
+    ck.check("uniform 50% DTV (S/N)_A", sig("uniform50_dtv"), "57.88", 2)
+    ck.check("uniform 75% DTV (S/N)_A", sig("uniform75_dtv"), "53.89", 2)
+    ck.check("uniform 97% DTV (S/N)_A", sig("uniform97_dtv"), "49.70", 2)
+    ck.check("uniform 50% whole band (S/N)_A", sig("uniform50_chime"), "48.84", 2)
+    ck.check("ch30 excised (S/N)_A", sig("ch30_excised"), "63.02", 2)
+    ck.check("ch30 retained (S/N)_A", sig("ch30_kept"), "63.19", 2)
+    ck.check("ch30 retained Fourier (S/N)_A", sig("ch30_kept_fourier"), "60.26", 2)
     ck.check("pilot-proxy survey penalty", pen("measured"), "1.032", 3)
     ck.check("pilot-proxy Fourier penalty", pen("measured_fourier"), "1.034", 3)
-    ck.check("uniform 25% penalty", pen("uniform25_dtv"), "1.075", 3)
-    ck.check("uniform 50% penalty", pen("uniform50_dtv"), "1.151", 3)
-    ck.check("uniform 75% penalty", pen("uniform75_dtv"), "1.218", 3)
-    ck.check("uniform 97% penalty", pen("uniform97_dtv"), "1.254", 3)
+    ck.check("uniform 25% penalty", pen("uniform25_dtv"), "1.076", 3)
+    ck.check("uniform 50% penalty", pen("uniform50_dtv"), "1.152", 3)
+    ck.check("uniform 75% penalty", pen("uniform75_dtv"), "1.219", 3)
+    ck.check("uniform 97% penalty", pen("uniform97_dtv"), "1.256", 3)
     ck.check("whole-band 50% penalty (x2 law)", pen("uniform50_chime"), "2.000", 3)
     ck.check("ch30 excised penalty", pen("ch30_excised"), "1.008", 3)
     ck.check("ch30 retained penalty", pen("ch30_kept"), "1.013", 3)
     ck.check("ch30 retained Fourier penalty", pen("ch30_kept_fourier"), "1.064", 3)
     ck.check("clean (S/N)_A at 1 on-sky yr",
-             float(rt["clean"]["sig_at_1yr_onsky"]), "48.80", 2)
+             float(rt["clean"]["sig_at_1yr_onsky"]), "48.84", 2)
     ck.check("clean survey 5-sigma hours",
-             float(rt["clean"]["hours_5sig"]), "208.9", 1)
+             float(rt["clean"]["hours_5sig"]), "208.8", 1)
 
     # prose percentages derived from the penalties
     print("-- Prose: survey penalties as percentages --")
     ck.check("pilot-proxy penalty as per cent", 100 * (pen("measured") - 1),
              "3.2", 1, tex_needle="3.2 per cent")
     ck.check("uniform 50% penalty as per cent", 100 * (pen("uniform50_dtv") - 1),
-             "15.1", 1, tex_needle="15.1 per cent")
+             "15.2", 1, tex_needle="15.2 per cent")
     ck.check("ch30-excision penalty as per cent", 100 * (pen("ch30_excised") - 1),
              "0.8", 1, tex_needle="0.8 per cent")
     ck.check("uniform 50% DTV factor (abstract)", pen("uniform50_dtv"),
@@ -128,12 +128,12 @@ def main() -> int:
 
     print("-- Table 3: bin level (on-sky years) --")
     for z, s, v5, vda in [
-        ("1.40-1.50", "clean", "0.174", "0.315"),
+        ("1.40-1.50", "clean", "0.175", "0.315"),
         ("1.40-1.50", "measured", "0.235", "0.421"),
-        ("1.40-1.50", "measured_fourier", "0.236", "0.424"),
-        ("1.40-1.50", "uniform50_dtv", "0.349", "0.629"),
-        ("1.40-1.50", "ch30_kept_fourier", "1.088", "1.963"),
-        ("1.40-1.50", "ch30_excised", "0.200", "0.359"),
+        ("1.40-1.50", "measured_fourier", "0.237", "0.424"),
+        ("1.40-1.50", "uniform50_dtv", "0.350", "0.629"),
+        ("1.40-1.50", "ch30_kept_fourier", "1.091", "1.963"),
+        ("1.40-1.50", "ch30_excised", "0.201", "0.359"),
         ("1.60-1.70", "clean", "0.209", "0.411"),
         ("1.60-1.70", "measured", "0.286", "0.547"),
     ]:
@@ -178,11 +178,11 @@ def main() -> int:
     ck.check("sigma(D_V)/D_V clean z=2.43",
              float(fv[2.433]["sigma_dv_clean_pct"]), "1.03", 2)
     ck.check("sigma(D_V)/D_V pilot-proxy z=1.45",
-             float(fv[1.45]["sigma_dv_representative_pct"]), "0.732", 3)
+             float(fv[1.45]["sigma_dv_representative_pct"]), "0.733", 3)
     ck.check("sigma(D_V)/D_V clean z=1.65",
              float(fv[1.65]["sigma_dv_clean_pct"]), "0.706", 3)
     ck.check("sigma(D_V)/D_V pilot-proxy z=1.65",
-             float(fv[1.65]["sigma_dv_representative_pct"]), "0.853", 3)
+             float(fv[1.65]["sigma_dv_representative_pct"]), "0.852", 3)
 
     # -------------------------------------- matched-fiducial comparison
     comparison = {
@@ -198,13 +198,13 @@ def main() -> int:
     )
     print("-- Sec 5.4: matched Planck/P-ACT comparison --")
     ck.check("Planck clean survey 5-sigma hours", planck_clean,
-             "208.9", 1)
+             "208.8", 1)
     ck.check("P-ACT clean survey 5-sigma hours", pact_clean,
-             "187.0", 1)
+             "186.9", 1)
     ck.check("P-ACT absolute-time shift",
              100.0 * (pact_clean / planck_clean - 1.0), "-10.5", 1)
     ck.check("maximum fiducial masking-penalty shift",
-             max_penalty_shift, "0.225", 3)
+             max_penalty_shift, "0.420", 3)
 
     # -------------------------------------- Bull foreground comparison
     foreground = {
