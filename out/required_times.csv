@@ -1,13 +1,13 @@
 scenario,label,sig_at_2yr,sig_at_1yr_onsky,hours_3sig,years_3sig,hours_5sig,years_5sig,time_penalty_vs_clean
-clean,No masking (RFI-free),63.51,48.8,109.6,0.0125,208.9,0.0238,1.0
-measured,Measured pilot-proxy masking,61.89,47.51,112.7,0.0129,215.6,0.0246,1.032
-uniform50_dtv,"50% masked, dtv band",57.82,43.89,124.0,0.0142,240.4,0.0274,1.151
-uniform75_dtv,"75% masked, dtv band",53.84,40.87,129.8,0.0148,254.3,0.029,1.218
-uniform97_dtv,"97% masked, dtv band",49.65,38.23,132.8,0.0152,262.0,0.0299,1.254
-measured_fourier,Measured (Fourier-mode noise convention),61.83,47.45,112.9,0.0129,216.0,0.0247,1.034
-uniform25_dtv,"25% masked, dtv band",60.95,46.52,116.9,0.0133,224.6,0.0256,1.075
-uniform90_dtv,"90% masked, dtv band",50.97,38.97,132.1,0.0151,260.2,0.0297,1.246
-uniform50_chime,"50% masked, chime band",48.8,35.52,219.1,0.025,417.7,0.0477,2.0
-ch30_excised,ch30 97% masked (excised),62.95,48.38,110.4,0.0126,210.6,0.024,1.008
-ch30_kept,ch30 97% masked (kept),63.12,48.44,110.9,0.0127,211.6,0.0242,1.013
-ch30_kept_fourier,ch30 97% masked (kept),60.2,46.1,115.7,0.0132,222.1,0.0254,1.064
+clean,No masking (RFI-free),63.57,48.84,109.6,0.0125,208.8,0.0238,1.0
+measured,Measured pilot-proxy masking,61.96,47.53,112.8,0.0129,215.6,0.0246,1.032
+uniform50_dtv,"50% masked, dtv band",57.88,43.92,124.0,0.0142,240.5,0.0275,1.152
+uniform75_dtv,"75% masked, dtv band",53.89,40.9,129.8,0.0148,254.5,0.029,1.219
+uniform97_dtv,"97% masked, dtv band",49.7,38.26,132.8,0.0152,262.2,0.0299,1.256
+measured_fourier,Measured (Fourier-mode noise convention),61.89,47.47,113.0,0.0129,216.0,0.0247,1.034
+uniform25_dtv,"25% masked, dtv band",60.98,46.55,117.0,0.0134,224.6,0.0256,1.076
+uniform90_dtv,"90% masked, dtv band",51.01,39.01,132.2,0.0151,260.5,0.0297,1.247
+uniform50_chime,"50% masked, chime band",48.84,35.51,219.2,0.025,417.6,0.0477,2.0
+ch30_excised,ch30 97% masked (excised),63.02,48.42,110.4,0.0126,210.5,0.024,1.008
+ch30_kept,ch30 97% masked (kept),63.19,48.47,110.9,0.0127,211.5,0.0241,1.013
+ch30_kept_fourier,ch30 97% masked (kept),60.26,46.14,115.8,0.0132,222.1,0.0254,1.064
