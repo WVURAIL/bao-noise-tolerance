@@ -515,7 +515,7 @@ src/baonoise/
   incumbent.py   incumbent-flagger comparisons
   plots.py       publication figures
 scripts/         reproducibility and strict-v2 bank-management commands
-data/            worked examples and strict-v2 research comparison banks
+data/            strict-v2 research comparison banks
 out/             figures, CSVs, results.md
 ```
 
@@ -523,7 +523,9 @@ out/             figures, CSVs, results.md
 
 Detector-kernel design, non-pilot/control-frequency selection, and new survey
 product generation belong in `pilot-proxy`; this repository validates and
-prices the resulting measurements. The old in-repo non-pilot draft and mixed
+prices the resulting measurements. The survey-plate figures (census
+PSDs, per-channel histograms, the worked example, the coherence aids)
+accordingly live in pilot-proxy's `analysis/`. The old in-repo non-pilot draft and mixed
 dissertation task list were removed to avoid competing contracts. The small
 [archived-roadmap note](docs/archive/legacy-roadmap.md) retains unresolved
 cross-project dependencies; Git history retains the completed rationale.
