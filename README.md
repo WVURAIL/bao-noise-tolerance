@@ -192,6 +192,7 @@ export RADIOFISHER_DIR=../RadioFisher   # optional; sibling dir is found automat
 pip install -e ".[pk]"                 # only when generating/refreshing P(k)
 
 baonoise-build-bank --help              # strict-v2 bank builder
+bash scripts/rebuild_shipped_banks.sh   # the four shipped banks: exact recipe + pin re-stamp
 python scripts/verify_bank.py           # interpolation + physics sanity checks
 python scripts/check_paper_numbers.py   # every number in the paper regenerates from out/*.csv
 python -m pytest tests/ -q
