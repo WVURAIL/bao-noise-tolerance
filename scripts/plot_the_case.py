@@ -36,7 +36,7 @@ from baonoise import products as _products
 from baonoise import residual as R
 from baonoise.npzio import load_npz
 
-# Validated categorical pair (see plot_footprint.py):
+# Validated categorical pair:
 #   node scripts/validate_palette.js "#2a78d6,#eb6834" --pairs all  -> ALL PASS
 OTHER, OURS = "#2a78d6", "#eb6834"
 INK, INK2, MUTED = "#0b0b0b", "#52514e", "#8a8983"
