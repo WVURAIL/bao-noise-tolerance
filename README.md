@@ -108,7 +108,9 @@ SharePoint under `RFI Mitigation/`, not in this public repository. The
 packaged forecasts use Tsys_tot = 55 K and work in ratio units
 throughout, so the file changes no verdict; it matters for
 absolute-unit conversion of shelf and floor levels and for validating
-the forecast Tsys.
+the forecast Tsys. `scripts/tsys_calibration.py` reads the file
+and runs that validation (in the DTV band the measured median
+is 56.5 K; 55 K sits inside the measured 10th--90th percentile).
 
 ## Results
 
