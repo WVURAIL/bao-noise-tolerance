@@ -100,6 +100,16 @@ fraction, which puts them above the excision threshold. Exposure-weighted
 fractions, for reference: ch17 ≈ 33%, ch31 ≈ 24%, ch32 ≈ 14%, ch35 ≈ 14%,
 ch33 ≈ 10%, everything else ≲ 4%.
 
+The CHIME system-temperature calibration
+(`20190530_and_20190614_system_temperature_measurement.h5`: Tsys over
+400--800 MHz from two 2019 calibrator transits, median 54.6 K, with
+receiver temperatures, effective area, and Jy/K) lives in the team
+SharePoint under `RFI Mitigation/`, not in this public repository. The
+packaged forecasts use Tsys_tot = 55 K and work in ratio units
+throughout, so the file changes no verdict; it matters for
+absolute-unit conversion of shelf and floor levels and for validating
+the forecast Tsys.
+
 ## Results
 
 Run `scripts/run_forecast.py` to regenerate. Headline numbers from the
