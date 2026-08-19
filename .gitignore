@@ -35,3 +35,4 @@ paper/*.fdb_latexmk
 paper/*.fls
 paper/*.log
 paper/*.out
+scripts/dissertation/out/

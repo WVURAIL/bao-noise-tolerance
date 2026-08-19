@@ -1,0 +1,5 @@
+channel,policy_key,label,residual_tolerance,residual_multiple,time_multiple,correlation_time_limit_minutes,evidence_state,note
+33,keep_everything,keep everything,0.0015,316,1.5,5,measured+modeled,Incurs no masking penalty but leaves a large residual.
+33,mad_1p8,MAD 1.8x (incumbent),0.0015,1587,3.6,5,measured+modeled,Incumbent time-domain policy under the current comparison.
+33,spectral_kurtosis,spectral kurtosis (incumbent),0.0015,382,1.9,5,measured+modeled,Incumbent higher-order-statistic policy under the current comparison.
+33,pilot_proxy,pilot proxy,0.0015,24,5.3,5,measured+modeled,"Best of the compared keep-and-mask policies, but still above the stated bias tolerance."
