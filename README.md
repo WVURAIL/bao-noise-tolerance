@@ -215,8 +215,24 @@ baonoise-build-bank --help              # strict-v2 bank builder
 bash scripts/rebuild_shipped_banks.sh   # the four shipped banks: exact recipe + pin re-stamp
 python scripts/verify_bank.py           # interpolation + physics sanity checks
 python scripts/check_paper_numbers.py   # every number in the paper regenerates from out/*.csv
+python scripts/check_dissertation_numbers.py --tex <overleaf-clone> \
+    --summary-json <pilot-proxy>/data/provenance/dissertation_summary_v2.json
 python -m pytest tests/ -q
 ```
+
+### Dissertation number gate
+
+`scripts/check_dissertation_numbers.py` is the dissertation's version of the
+paper gate. The LaTeX lives on Overleaf, which exposes a git bridge (Menu ->
+Git), so clone it next to this repository and point the gate at the clone; a
+pdftotext export also works for an advisory run, though table cells can
+scramble in extraction, so the `.tex` run is the authoritative one. Checks are
+of three kinds: values that must match `out/optimal_thresholds.csv`,
+`out/fine_operating_points.csv`, and the pilot-proxy policy snapshot at the
+dissertation's own rounding; known-stale literals that must be gone; and
+mutually inconsistent number pairs that fail only while both are present.
+A red run *is* the revision to-do list -- each FAIL line names the fix and the
+authoritative source, and the exit status makes it a pre-submission CI step.
 
 ### Optional coherent-bias research banks
 
