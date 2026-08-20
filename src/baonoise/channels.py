@@ -7,11 +7,21 @@ the two sources here differ by up to 90x on the same channels:
 * :func:`mask_table_from_products` reads the survey products directly and takes
   the rule out of each product's own detector contract. The number and the rule
   travel together and cannot drift apart.
-* :func:`measured_mask_fractions` reads a quarterly rate CSV. Nothing in that
-  file records what statistic or threshold produced its ``hi_rate_all``
-  column, so a forecast built on it silently inherits an unidentified detector.
-  It is kept for the published numbers; :func:`measured_mask_table` wraps it
-  and marks the rule ``unrecorded`` so the gap is visible rather than implied.
+* :func:`measured_mask_fractions` reads the vendored quarterly rate CSV
+  (``survey_quarterly_rates_all23.csv``, pilot-proxy
+  ``data/provenance/survey_stratum_20260718/``). Its provenance is now
+  identified: ``analysis/survey_composition.py`` produced it on 2026-07-18 with
+  the coarse rule ``F > mu_hat + 0.012 * mu0`` (about five null widths above
+  each channel's empirical zero point) from the *first* production trawl,
+  whose weight bank (sha256 ``b0dce17a...``, kept as
+  ``weights/legacy_halfband/``) assumed the coarse-channel center at Nyquist
+  and was mistuned by fs/2 relative to the verified center-at-DC frame
+  convention. Pilots were suppressed by 39-47 dB at the line on every channel
+  except 30, whose pilot sits 847 Hz from fs/4 where that error self-cancels.
+  The table is therefore a record of the legacy epoch, not a DTV occupancy
+  measurement; :func:`measured_mask_table` wraps it with that rule and epoch
+  so the limitation is visible rather than implied. It is kept because the
+  early ``out/`` numbers were built from it.
 
 Channels 24 and 30 are "refused" in pilot-proxy (no calibrated zero point: the
 DTV transmitter is essentially always on); we model them as masked at
@@ -42,6 +52,17 @@ ATSC_DTV_UPPER_EDGE = (
 # Channels with no calibrated zero point in pilot-proxy (persistently on-air).
 REFUSED_CHANNELS = (24, 30)
 REFUSED_FRACTION = 0.97       # masked fraction adopted for refused channels
+
+# Provenance of the vendored quarterly CSV (see the module docstring).
+LEGACY_CSV_RULE = (
+    "coarse F > mu_hat + 0.012*mu0 on the empirical zero point "
+    "(pilot-proxy analysis/survey_composition.py, 2026-07-18)"
+)
+LEGACY_CSV_EPOCH = (
+    "legacy-halfband epoch: first production trawl, weight bank b0dce17a "
+    "(coarse-channel center assumed at Nyquist; mistuned by fs/2, pilots "
+    "suppressed 39-47 dB except channel 30)"
+)
 
 
 def _source_name(source) -> str:
@@ -103,16 +124,27 @@ class MaskTable:
     n_frames: dict[int, int] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     window: str = "full span"       # epoch the fractions describe
+    epoch: str = "current"          # detector epoch that produced the fractions
+    occupancy_valid: bool = True    # False: not a DTV occupancy measurement
 
     @property
     def is_traceable(self) -> bool:
         return self.rule != "unrecorded"
+
+    @property
+    def is_occupancy_measurement(self) -> bool:
+        """True when the fractions measure DTV occupancy under an identified,
+        correctly tuned detector. The vendored legacy CSV is traceable but
+        not an occupancy measurement."""
+        return bool(self.occupancy_valid)
 
     def summary(self) -> str:
         head = (f"{len(self.fractions)} channels from {self.source}; "
                 f"rule: {self.rule}")
         if self.window != "full span":
             head += f"; window: {self.window}"
+        if not self.occupancy_valid:
+            head += f"; NOT an occupancy measurement ({self.epoch})"
         body = "\n".join(
             f"    ch{ch:>3d}  {f:7.4f}"
             + (f"   ({self.n_frames[ch]} frames)" if ch in self.n_frames else "")
@@ -296,12 +328,22 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
 def measured_mask_table(rates_csv: str | Path = DEFAULT_RATES_CSV,
                         refused_fraction: float = REFUSED_FRACTION,
                         rate_col: str = "hi_rate_all") -> MaskTable:
-    """The vendored quarterly CSV, wrapped so its missing provenance shows."""
+    """The vendored quarterly CSV, wrapped so its provenance and limits show.
+
+    The rule and epoch are those of the shipped
+    ``survey_quarterly_rates_all23.csv``; a caller passing another CSV with the
+    same column layout inherits the same labels and should override them.
+    """
     fr = measured_mask_fractions(rates_csv, refused_fraction, rate_col)
     return MaskTable(
-        fractions=fr, source="csv", rule="unrecorded",
-        notes=[f"column {rate_col!r} in {_source_name(rates_csv)} records no "
-               f"statistic or threshold; the detector behind it is unverified"])
+        fractions=fr, source="csv", rule=LEGACY_CSV_RULE,
+        epoch=LEGACY_CSV_EPOCH, occupancy_valid=False,
+        notes=[f"column {rate_col!r} in {_source_name(rates_csv)} was produced "
+               f"by the legacy fs/2-mistuned detector epoch; its rates are the "
+               f"null tail plus leakage from the strongest carriers, not DTV "
+               f"occupancy (channel 30 excepted); refused channels "
+               f"{REFUSED_CHANNELS} are the assumed {refused_fraction:.2f}, "
+               f"not a rate"])
 
 
 def merge_mask_tables(*tables: MaskTable) -> MaskTable:

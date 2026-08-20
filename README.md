@@ -89,7 +89,7 @@ the survey barely notices.
 
 ## Inputs
 
-The fiducial "measured" scenario uses the survey products committed in
+The fiducial "measured" scenario uses the quarterly rate table committed in
 pilot-proxy (`data/provenance/survey_stratum_20260718/
 survey_quarterly_rates_all23.csv`, distributed as package data): per channel,
 the exposure-weighted mean of quarterly `hi_rate_all` (weights =
@@ -99,6 +99,24 @@ transmitter is essentially always on); they are assigned a 97% masked
 fraction, which puts them above the excision threshold. Exposure-weighted
 fractions, for reference: ch17 ≈ 33%, ch31 ≈ 24%, ch32 ≈ 14%, ch35 ≈ 14%,
 ch33 ≈ 10%, everything else ≲ 4%.
+
+**Read this before quoting those numbers.** The table's provenance is now
+identified. It was written on 2026-07-18 by pilot-proxy's
+`analysis/survey_composition.py` with the coarse rule
+`F > mu_hat + 0.012*mu0` (about five null widths above each channel's
+empirical zero point) from the *first* production trawl, whose weight bank
+(sha256 `b0dce17a...`, retained as `weights/legacy_halfband/`) placed the
+coarse-channel center at Nyquist. That frame convention was later shown to be
+wrong by fs/2: pilots were suppressed by 39–47 dB at the line on every channel
+except 30, whose pilot happens to sit 847 Hz from fs/4 where the error
+self-cancels. The rates in the CSV are therefore the null tail plus leakage
+from the strongest carriers — a record of the legacy detector epoch, **not a
+measurement of DTV occupancy** — and the "97%" on channels 24/30 is the
+refused-channel placeholder, not a rate. `scenarios.measured()` warns when it
+is used without `products=`; forecast on corrected-epoch survey products
+(`scenarios.measured(products=[...])`) for any occupancy statement. The
+measured-masking rows in `out/` and the penalty quoted in *Results* were
+computed from the legacy table and are kept as the historical baseline.
 
 The CHIME system-temperature calibration
 (`20190530_and_20190614_system_temperature_measurement.h5`: Tsys over
@@ -293,7 +311,10 @@ convention.
 ## Where the masking fractions come from
 
 A masking fraction is only meaningful next to the rule that produced it, and
-the two available sources disagree by up to 87× on the same channels:
+the two available sources disagree by up to 87× on the same channels. The
+reason is known (see *Inputs*): the vendored CSV is the legacy fs/2-mistuned
+detector epoch, the products are the corrected one. The comparison below is
+kept because it is what made the discrepancy visible:
 
 ```
 python3 scripts/compare_mask_tables.py 506.npz 521.npz 537.npz --forecast
@@ -312,12 +333,14 @@ statistic in the products reproduces the CSV: matching it would need η = 1.40
 on ch34, 15.2 on ch35 and 20.8 on ch36, and masking at the median gives 50% by
 construction. The CSV's per-channel exposures also don't match the products
 (37,474 frames for ch34 against 39,017) and run 7.7k–37k across the band, so it
-came from a different trawl.
+came from the first (legacy-bank) trawl. Both facts follow from the fs/2
+mistuning — a template 64 fine bins from the real pilot sees only its
+sidelobes.
 
-The defect is that nothing recorded which. `measured_mask_fractions` reads a
-column named `hi_rate_all` and hands it to the Fisher machinery, so the
-forecast silently inherits an unidentified detector.
-`channels.MaskTable` fixes that by making provenance part of the value:
+`measured_mask_fractions` reads a column named `hi_rate_all` and hands it to
+the Fisher machinery; `channels.MaskTable` makes the provenance part of the
+value, and `measured_mask_table()` now labels the vendored CSV with its
+recorded rule and its legacy epoch (`is_occupancy_measurement` is False):
 
 ```python
 from baonoise import channels as chn, scenarios
@@ -325,7 +348,9 @@ from baonoise import channels as chn, scenarios
 prod = chn.mask_table_from_products(["506.npz", "521.npz", "537.npz"])
 prod.rule           # 'F > mu0; mu0 = 2*target_norm_sq/ref_norm_sum_sq'
 prod.is_traceable   # True
-chn.measured_mask_table().is_traceable   # False (rule 'unrecorded')
+prod.is_occupancy_measurement            # True
+chn.measured_mask_table().is_traceable   # True (legacy rule recorded)
+chn.measured_mask_table().is_occupancy_measurement   # False (legacy epoch)
 
 scenarios.measured(products=[...])       # forecast on the detector's own decision
 ```

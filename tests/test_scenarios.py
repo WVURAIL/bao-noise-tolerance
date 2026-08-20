@@ -291,10 +291,19 @@ def test_product_table_carries_its_rule(tmp_path):
     assert any("ch30" in n for n in t.notes)
 
 
-def test_csv_table_is_marked_untraceable():
+def test_csv_table_carries_legacy_epoch_provenance():
     t = chn.measured_mask_table()
-    assert not t.is_traceable and t.rule == "unrecorded"
-    assert any("records no statistic" in n for n in t.notes)
+    # the rule is now identified (traceable) but it is the mistuned legacy
+    # epoch, so the table is not an occupancy measurement
+    assert t.is_traceable and t.rule == chn.LEGACY_CSV_RULE
+    assert not t.is_occupancy_measurement and t.epoch == chn.LEGACY_CSV_EPOCH
+    assert any("legacy fs/2-mistuned" in n for n in t.notes)
+    assert "NOT an occupancy measurement" in t.summary()
+
+
+def test_measured_scenario_from_csv_warns_about_legacy_epoch():
+    with pytest.warns(UserWarning, match="legacy fs/2-mistuned"):
+        scenarios.measured()
 
 
 def test_mixed_kernels_are_refused(tmp_path):

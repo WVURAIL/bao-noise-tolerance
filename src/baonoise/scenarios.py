@@ -52,6 +52,7 @@ case: a slice whose r reaches it is dropped rather than integrated through.
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from numbers import Integral
 
@@ -381,6 +382,13 @@ def measured(rates_csv=None, refused_fraction: float = chn.REFUSED_FRACTION,
     kw = {} if rates_csv is None else {"rates_csv": rates_csv}
     table = chn.measured_mask_table(refused_fraction=refused_fraction, **kw)
     label, name = "Measured pilot-proxy masking", "measured"
+    if products is None and not table.is_occupancy_measurement:
+        warnings.warn(
+            "scenarios.measured(): the vendored rate table is the legacy "
+            "fs/2-mistuned detector epoch and does not measure DTV occupancy "
+            f"({table.epoch}); pass products=... to forecast on the detector's "
+            "own decision from corrected-epoch survey products",
+            UserWarning, stacklevel=2)
 
     if products is not None:
         prod = chn.mask_table_from_products(products,
