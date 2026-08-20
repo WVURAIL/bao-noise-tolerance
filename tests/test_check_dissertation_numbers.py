@@ -36,6 +36,21 @@ def test_normalize_tex_strips_comments_not_escaped_percent():
     assert "48.5%" in n and "trailing" not in n and "next" in n
 
 
+def test_normalize_tex_math_idioms():
+    n = cdn.normalize(r"$1.4\times$ margin, 1\,566$\times$, $-0.00026$~dB",
+                      tex=True)
+    assert "1.4x" in n and "1566x" in n and "-0.00026 dB" in n
+
+
+def test_wide_surface_only_reaches_wide_checks(capsys):
+    ck = cdn.Checker("prose only", extra="316x from figure data")
+    ck.value("narrow", ["316x"], "m")
+    ck.value("wide", ["316x"], "m", wide=True)
+    out = capsys.readouterr().out
+    assert ck.failures == 1
+    assert "FAIL  narrow" in out and "PASS  wide" in out
+
+
 def test_check_kinds_fail_in_their_directions(capsys):
     ck = cdn.Checker("keep 1566x and 316x over; both 104 ns and 110 ns")
     ck.require("present", r"1566x", "m")
@@ -122,5 +137,17 @@ def _green_min() -> str:
         + [str(int(float(r["multiplier_q16"]))) + " "
            + (f"{float(r['r_late']):.3f}" if r.get("r_late") else "")
            for r in fine.values()]
-        + ["fs/2 legacy quarterly", "3.2-7.8", "46748", "7.6 yr",
+        + ["fs/2 legacy quarterly", "3.2-7.8", "46748", "7.6 yr", "1566x",
            "XOR 0x88", "48.5%", "fine_gain_mc", "Youden"])
+
+
+def test_baseline_ratchet(tmp_path):
+    red = tmp_path / "r.txt"
+    red.write_text(_green_min() + " eight years")   # exactly one regression
+    base = tmp_path / "baseline"
+    base.write_text("1")
+    assert cdn.main(["--tex", str(red), "--baseline", str(base)]) == 0
+    base.write_text("0")
+    assert cdn.main(["--tex", str(red), "--baseline", str(base)]) == 1
+    assert cdn.main(["--tex", str(red),
+                     "--baseline", str(tmp_path / "missing")]) == 1

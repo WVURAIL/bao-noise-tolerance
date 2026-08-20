@@ -233,6 +233,9 @@ dissertation's own rounding; known-stale literals that must be gone; and
 mutually inconsistent number pairs that fail only while both are present.
 A red run *is* the revision to-do list -- each FAIL line names the fix and the
 authoritative source, and the exit status makes it a pre-submission CI step.
+For continuous use while the list burns down, `--baseline <file>` turns the
+exit status into a ratchet: commit the current FAIL count to a file and CI
+stays green unless a push *adds* failures; lower the number as items land.
 
 ### Optional coherent-bias research banks
 

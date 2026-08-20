@@ -65,8 +65,11 @@ def normalize(text: str, *, tex: bool = False) -> str:
     s = text.translate({**_DASHES, **_QUOTES, **_SPACES, **_MULT})
     if tex:
         s = re.sub(r"(?<!\\)%.*", "", s)          # comments, not literal \%
-        s = s.replace("\\%", "%").replace("\\,", " ").replace("~", " ")
-        s = s.replace("\\times", " x ")
+        s = (s.replace("\\%", "%")
+              .replace("\\times", "x")            # $1.4\times$ -> 1.4x
+              .replace("\\,", "")                 # 1\,566 -> 1566
+              .replace("~", " ")
+              .replace("$", ""))                  # math delimiters
     s = re.sub(r"(?<=\d),(?=\d)", "", s)
     return re.sub(r"\s+", " ", s)
 
@@ -93,8 +96,13 @@ def load_tex(paths: list[str]) -> tuple[str, list[Path]]:
 
 # ---------------------------------------------------------------- checker
 class Checker:
-    def __init__(self, text: str):
+    """`text` is the dissertation source; `extra` is an optional secondary
+    surface (frozen figure data, evidence exports) that only checks with
+    ``wide=True`` consult -- numbers rendered inside figures live there."""
+
+    def __init__(self, text: str, extra: str = ""):
         self.text = text
+        self.wide = text + " " + extra
         self.n = 0
         self.failures = 0
         self._section = None
@@ -111,14 +119,17 @@ class Checker:
             print(f"\n-- {title} --")
             self._section = title
 
-    def require(self, label: str, pattern: str, msg: str) -> None:
-        ok = re.search(pattern, self.text) is not None
+    def require(self, label: str, pattern: str, msg: str,
+                wide: bool = False) -> None:
+        ok = re.search(pattern, self.wide if wide else self.text) is not None
         self._emit("PASS" if ok else "FAIL", label,
                    f"missing; {msg}" if not ok else msg)
 
-    def value(self, label: str, needles: list[str], msg: str) -> None:
+    def value(self, label: str, needles: list[str], msg: str,
+              wide: bool = False) -> None:
         """Any one of several plain-substring renderings must appear."""
-        ok = any(n in self.text for n in needles)
+        hay = self.wide if wide else self.text
+        ok = any(n in hay for n in needles)
         self._emit("PASS" if ok else "FAIL", label,
                    "" if ok else f"none of {needles} found; {msg}")
 
@@ -205,15 +216,20 @@ def run_checks(ck: Checker, summary: dict | None) -> None:
                  "regenerate keep_everything via scripts/policy_comparison.py"
                  " --json (expect ~1566x / 3.35x), then re-export Fig 9.4")
         for key, p in pol.items():
-            ck.value(f"policy '{key}' multiple quoted",
-                     [f"{int(p['residual_multiple'])}x"],
-                     "text/figure must quote the snapshot; if the snapshot is"
-                     " being regenerated, rerun this gate after")
+            mult = int(p["residual_multiple"])
+            # Token-bounded so hex digests in scanned manifests cannot match.
+            ck.require(f"policy '{key}' multiple in text or figure data",
+                       rf"(?<![\w.]){mult}(x|(?![\w.]))",
+                       "quote it in prose, or land figure_src/data/.../"
+                       "bao_policy_case.csv via the export and pass it with"
+                       " --also-scan", wide=True)
     ck.forbid("stale keep-everything caption", r"316x over",
               "Fig 9.4 caption is the all-frames r_keep population; regenerate"
               " after the snapshot fix")
-    ck.require("SS9.7 incumbent-comparison multiple", r"1566x",
-               "keep 2.35 -> 1566x on the acquisitions>=8 base")
+    ck.require("SS9.7 incumbent-comparison multiple",
+               r"(?<![\w.])1566(x|(?![\w.]))",
+               "keep 2.35 -> 1566x on the acquisitions>=8 base (prose or"
+               " figure data)", wide=True)
 
     # ---- Table 9.4 <- out/optimal_thresholds.csv ------------------------
     ck.section("Table 9.4 <- out/optimal_thresholds.csv")
@@ -345,6 +361,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tex", nargs="+", required=True,
                     help=".tex files, directories of .tex (an Overleaf git"
                          " clone), or a plain-text export")
+    ap.add_argument("--baseline", default=None,
+                    help="path to a file containing an integer FAIL budget."
+                         " With it, exit 0 while failures <= budget and 1"
+                         " only on regression -- a CI ratchet: lower the"
+                         " committed number as items are fixed. A missing"
+                         " file falls back to the strict gate.")
+    ap.add_argument("--also-scan", nargs="*", default=[],
+                    help="extra text surfaces (files or directories: frozen"
+                         " figure data CSVs, evidence exports) consulted only"
+                         " by figure-borne checks")
     ap.add_argument("--summary-json", default=None,
                     help="pilot-proxy data/provenance/"
                          "dissertation_summary_v2.json (policy invariants"
@@ -352,18 +378,46 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     text, files = load_tex(args.tex)
+    extra = ""
+    for raw in args.also_scan:
+        q = Path(raw)
+        picks = ([q] if q.is_file() else
+                 [f for f in sorted(q.rglob("*"))
+                  if f.suffix in (".csv", ".json", ".md", ".txt", ".py",
+                                  ".tikz", ".tex")])
+        for f in picks:
+            extra += " " + normalize(
+                f.read_text(encoding="utf-8", errors="replace"),
+                tex=f.suffix == ".tex")
     print(f"checking {len(files)} source file(s), {len(text):,} chars"
-          " normalized")
+          f" normalized"
+          + (f" (+{len(extra):,} chars scanned)" if extra else ""))
     summary = None
     if args.summary_json:
         summary = json.loads(Path(args.summary_json).read_text())
 
-    ck = Checker(text)
+    ck = Checker(text, extra)
     run_checks(ck, summary)
     print(f"\n{ck.n - ck.failures}/{ck.n} checks passed.")
     if ck.failures:
         print("Each FAIL line above names the fix and the authoritative"
               " source.")
+    if args.baseline is not None:
+        base_path = Path(args.baseline)
+        if not base_path.is_file():
+            print(f"baseline file {base_path} not found; strict gate applies.")
+        else:
+            budget = int(base_path.read_text().strip())
+            if ck.failures > budget:
+                print(f"REGRESSION: {ck.failures} failures exceed the"
+                      f" committed baseline of {budget}.")
+                return 1
+            if ck.failures < budget:
+                print(f"Ratchet: {ck.failures} failures, baseline {budget}"
+                      f" -- lower {base_path} to {ck.failures}.")
+            else:
+                print(f"Within baseline ({budget}).")
+            return 0
     return 1 if ck.failures else 0
 
 
