@@ -67,6 +67,9 @@ def normalize(text: str, *, tex: bool = False) -> str:
         s = re.sub(r"(?<!\\)%.*", "", s)          # comments, not literal \%
         s = (s.replace("\\%", "%")
               .replace("\\times", "x")            # $1.4\times$ -> 1.4x
+              .replace("{,}", ",")                # 1{,}566 -> 1,566 -> 1566
+              .replace("---", "-")                # TeX em dash
+              .replace("--", "-")                 # TeX en dash: 3.2--7.8
               .replace("\\,", "")                 # 1\,566 -> 1566
               .replace("~", " ")
               .replace("$", ""))                  # math delimiters
