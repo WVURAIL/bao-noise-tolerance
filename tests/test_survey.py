@@ -40,3 +40,89 @@ def test_bull_experiment_ignores_radiofisher_root_array_config(tmp_path):
         resources.SYNTHETIC_BASELINE_NAME)
     assert Path(experiment["n(x)"]).resolve() == expected.resolve()
     assert Path(experiment["n(x)"]).resolve() != stale.resolve()
+
+
+def test_recorded_bull_experiment_restores_foregrounds_and_overrides(
+        monkeypatch, tmp_path):
+    baseline = tmp_path / "nx.dat"
+    baseline.write_text("baseline")
+    seen = []
+
+    def make_experiment(_rf, _rf_dir, ttot_hours, epsilon_fg, k_nl0):
+        seen.append((ttot_hours, epsilon_fg, k_nl0))
+        return {
+            "ttot": ttot_hours * survey.HRS_MHZ,
+            "epsilon_fg": epsilon_fg,
+            "k_nl0": k_nl0,
+            "n(x)": str(baseline),
+        }
+
+    monkeypatch.setattr(survey, "chime_experiment", make_experiment)
+    meta = {
+        "config": "bull2015",
+        "expt_overrides": {"kfg_fac": 80.0},
+        "provenance": {"experiment": {"settings": {
+            "ttot": survey.HRS_MHZ,
+            "epsilon_fg": 1e-5,
+            "k_nl0": 0.2,
+            "kfg_fac": 80.0,
+            "n(x)": baseline.name,
+        }}},
+    }
+
+    experiment = survey.experiment_from_bank_metadata(
+        object(), tmp_path, meta, ttot_hours=25.0)
+
+    assert seen == [(1.0, 1e-5, 0.2), (25.0, 1e-5, 0.2)]
+    assert experiment["ttot"] == 25.0 * survey.HRS_MHZ
+    assert experiment["kfg_fac"] == 80.0
+
+
+def test_recorded_overview_experiment_restores_kfg_override(monkeypatch, tmp_path):
+    baseline = tmp_path / "chime2021" / "array_config" / "nx.dat"
+    baseline.parent.mkdir(parents=True)
+    baseline.write_text("baseline")
+
+    def make_experiment(_rf, _rf_dir, ttot_hours):
+        return {
+            "ttot": ttot_hours * survey.HRS_MHZ,
+            "epsilon_fg": 0.0,
+            "k_nl0": 0.14,
+            "n(x)": str(baseline),
+        }
+
+    monkeypatch.setattr(survey, "chime2022_experiment", make_experiment)
+    meta = {
+        "config": "chime2022",
+        "expt_overrides": {"kfg_fac": 44.0},
+        "provenance": {"experiment": {"settings": {
+            "ttot": survey.HRS_MHZ,
+            "epsilon_fg": 0.0,
+            "k_nl0": 0.14,
+            "kfg_fac": 44.0,
+            "n(x)": "chime2021/array_config/nx.dat",
+        }}},
+    }
+
+    experiment = survey.experiment_from_bank_metadata(
+        object(), tmp_path, meta, ttot_hours=12.0)
+
+    assert experiment["ttot"] == 12.0 * survey.HRS_MHZ
+    assert experiment["kfg_fac"] == 44.0
+
+
+def test_recorded_experiment_fails_closed_on_unexplained_setting_drift(
+        monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        survey, "chime2022_experiment",
+        lambda _rf, _rf_dir, ttot_hours: {
+            "ttot": ttot_hours * survey.HRS_MHZ, "epsilon_fg": 0.0})
+    meta = {
+        "config": "chime2022", "expt_overrides": {},
+        "provenance": {"experiment": {"settings": {
+            "ttot": survey.HRS_MHZ, "epsilon_fg": 1e-5}}},
+    }
+
+    with np.testing.assert_raises_regex(ValueError, "cannot be reconstructed"):
+        survey.experiment_from_bank_metadata(
+            object(), tmp_path, meta, ttot_hours=1.0)

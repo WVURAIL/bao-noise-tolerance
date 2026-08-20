@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from baonoise import cli, scenarios
@@ -66,6 +67,35 @@ def test_build_cli_defaults_to_current_chime_configuration(monkeypatch, tmp_path
 
     assert seen["config"] == "chime2022"
     assert seen["cosmology"] is None
+
+
+def test_build_cli_adds_bull_knee_without_moving_base_grid(monkeypatch,
+                                                           tmp_path):
+    seen = {}
+    monkeypatch.setattr(
+        cli, "build_bank", lambda output, **kwargs: seen.update(
+            output=output, **kwargs))
+    knee = 10.0 ** 3.5
+
+    assert cli.build_bank_main([
+        "--out", str(tmp_path / "bank.npz"),
+        "--config", "bull2015", "--cosmology", "planck2013",
+        "--nt", "27", "--extra-time-hours", repr(knee),
+    ]) == 0
+
+    base = np.logspace(0.0, 6.0, 27)
+    assert np.array_equal(
+        seen["t_grid_hours"], np.unique(np.concatenate([base, [knee]])))
+    assert seen["t_grid_hours"].size == 28
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "1e7"])
+def test_build_cli_rejects_invalid_extra_time(tmp_path, value):
+    with pytest.raises(SystemExit):
+        cli.build_bank_main([
+            "--out", str(tmp_path / "bank.npz"),
+            "--extra-time-hours", value,
+        ])
 
 
 @pytest.mark.parametrize(

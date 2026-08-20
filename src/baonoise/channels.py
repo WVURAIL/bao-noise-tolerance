@@ -32,12 +32,14 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
+from ._validation import positive_scalar
 from .npzio import load_npz
 from .constants import HI_REST_FREQUENCY_MHZ
 
@@ -64,11 +66,68 @@ LEGACY_CSV_EPOCH = (
     "suppressed 39-47 dB except channel 30)"
 )
 
+_DETECTOR_PACKAGE_RE = re.compile(r"^[^/\s=]+/[^/\s=]+$")
+_KERNEL_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
 
 def _source_name(source) -> str:
     """Display name for a path or package resource."""
     name = getattr(source, "name", None)
     return str(name) if name is not None else Path(source).name
+
+
+def _scalar_text(value, field_name: str) -> str:
+    """Return one stripped string from a product metadata scalar."""
+    array = np.asarray(value)
+    if array.size != 1:
+        raise ValueError(f"{field_name} must contain exactly one string")
+    text = str(array.reshape(-1)[0]).strip()
+    if not text:
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return text
+
+
+def _detector_identity(d) -> tuple[str, str]:
+    """Extract a package identity and full kernel digest from one product."""
+    if "detector_version" not in d:
+        raise ValueError("detector_version is missing")
+    detector_version = _scalar_text(d["detector_version"], "detector_version")
+    tokens = detector_version.split()
+    package = tokens[0]
+    if not _DETECTOR_PACKAGE_RE.fullmatch(package):
+        raise ValueError(
+            "detector_version must begin with a package/version identity")
+    kernel_tokens = [
+        token.split("=", 1)[1] for token in tokens
+        if token.startswith("kernel_sha256=")
+    ]
+    if len(kernel_tokens) != 1 \
+            or not _KERNEL_SHA256_RE.fullmatch(kernel_tokens[0]):
+        raise ValueError(
+            "detector_version must contain exactly one full kernel_sha256")
+    return package, kernel_tokens[0].lower()
+
+
+def _coarse_mask_rule(d) -> str:
+    """Extract one non-empty coarse mask rule from recorded product metadata."""
+    if "detector_contract_json" in d:
+        text = _scalar_text(
+            d["detector_contract_json"], "detector_contract_json")
+        try:
+            contract = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError("detector_contract_json is not valid JSON") from exc
+        if not isinstance(contract, dict):
+            raise ValueError("detector_contract_json must decode to an object")
+        rule = contract.get("equivalent_mask_rule", contract.get("mask_rule"))
+    elif "mask_rule" in d:
+        rule = _scalar_text(d["mask_rule"], "mask_rule")
+    else:
+        rule = None
+    if (not isinstance(rule, str) or not rule.strip()
+            or rule.strip().lower() == "unrecorded"):
+        raise ValueError("a recorded non-empty mask rule is required")
+    return rule.strip()
 
 
 def channel_edges(ch: int) -> tuple[float, float]:
@@ -207,17 +266,19 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
     the point: a bare ``{channel: fraction}`` dict cannot be checked against
     the detector it claims to describe.
 
-    ``require_same_detector`` refuses a mixed set. The hard gate is the
+    ``require_same_detector`` refuses missing, malformed, or mixed detector
+    identities. The hard gate is the
     *kernel* (``kernel_sha256`` plus the mask rule) because that is what
     decides each frame; two products that disagree there cannot be averaged
     into one table. A differing harness *package* version over an identical
     kernel is recorded as a note instead of an error: it usually means one
     product predates a release, which is worth knowing but does not change
-    what F was computed to be.
+    what F was computed to be. ``require_same_detector=False`` is the explicit
+    compatibility override for legacy products; using it always returns a
+    nontraceable, non-occupancy-valid result rather than assigning an invented
+    common identity.
     """
-    eta = float(eta)
-    if eta <= 0.0:
-        raise ValueError(f"eta must be positive, got {eta}")
+    eta = positive_scalar(eta, "eta")
     if eta != 1.0 and stage != "coarse":
         raise ValueError(
             "eta rethresholds the coarse statistic F; it does not apply to "
@@ -227,7 +288,7 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
               else f"{since or 'start'}..{until or 'end'}")
     fractions, n_frames, rules = {}, {}, set()
     kernels, packages, seen = set(), set(), {}
-    window_notes = []
+    window_notes, identity_issues = [], []
     for p in paths:
         d = load_npz(p)
         ch = int(d["physical_channel"][0])
@@ -243,6 +304,7 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
                 valid = valid & (month >= since)
             if until is not None:
                 valid = valid & (month <= until)
+        rule = None
         if eta != 1.0:
             if "fstat_raw" not in d or "mu0" not in d:
                 raise ValueError(
@@ -274,29 +336,43 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
         fractions[ch] = float(rejected[valid].mean())
         n_frames[ch] = int(valid.sum())
         if eta != 1.0:
-            rules.add(f"F > {eta:g}*mu0 (rethresholded from fstat_raw; "
-                      f"deployed decision is F > mu0)")
+            rule = (f"F > {eta:g}*mu0 (rethresholded from fstat_raw; "
+                    f"deployed decision is F > mu0)")
         elif stage == "fine":
-            pfa = float(d["fine_p_fa"]) if "fine_p_fa" in d else float("nan")
-            rules.add(f"fine rank-CFAR detection (p_fa={pfa:g})")
+            try:
+                pfa = float(_scalar_text(d["fine_p_fa"], "fine_p_fa"))
+                if not np.isfinite(pfa) or not 0.0 < pfa < 1.0:
+                    raise ValueError("fine_p_fa must be finite and in (0, 1)")
+                rule = f"fine rank-CFAR detection (p_fa={pfa:g})"
+            except (KeyError, ValueError) as exc:
+                identity_issues.append(f"{Path(p).name}: {exc}")
+                rule = "unrecorded"
         else:
             try:
-                contract = json.loads(str(d["detector_contract_json"]))
-                rules.add(str(contract.get("equivalent_mask_rule",
-                                           contract.get("mask_rule",
-                                                        "unrecorded"))))
-            except Exception:
-                rules.add(str(d["mask_rule"]) if "mask_rule" in d
-                          else "unrecorded")
-        dv = str(d["detector_version"]) if "detector_version" in d else ""
-        packages.add(dv.split(" ")[0] or "unrecorded")
-        kernels.add(next((tok.split("=", 1)[1] for tok in dv.split()
-                          if tok.startswith("kernel_sha256=")), "unrecorded"))
+                rule = _coarse_mask_rule(d)
+            except ValueError as exc:
+                identity_issues.append(f"{Path(p).name}: {exc}")
+                rule = "unrecorded"
+        rules.add(rule)
+        try:
+            package, kernel = _detector_identity(d)
+        except ValueError as exc:
+            identity_issues.append(f"{Path(p).name}: {exc}")
+            package, kernel = "unrecorded", "unrecorded"
+        packages.add(package)
+        kernels.add(kernel)
 
     if not fractions:
         raise ValueError(
             "no product yielded any valid frames"
             + (f" in {window}" if windowed else ""))
+    if require_same_detector and identity_issues:
+        raise ValueError(
+            "products lack a valid detector identity: "
+            + "; ".join(identity_issues)
+            + "; regenerate them with detector/version, rule, and full kernel "
+              "provenance, or pass require_same_detector=False for an "
+              "explicit nontraceable compatibility result")
     if require_same_detector and len(rules) > 1:
         raise ValueError(f"products disagree on the mask rule: {sorted(rules)}; "
                          f"combining them would average two detectors")
@@ -306,11 +382,29 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
             f"the frames were decided by different code; re-run them under "
             f"one kernel, or pass require_same_detector=False to override")
 
+    identity_valid = (
+        require_same_detector and not identity_issues
+        and len(rules) == 1 and "unrecorded" not in rules
+        and len(kernels) == 1 and "unrecorded" not in kernels
+    )
     notes = list(window_notes)
-    if len(packages) > 1:
+    if len(packages) > 1 and identity_valid:
         notes.append(f"products span harness versions {sorted(packages)} over "
                      f"one kernel ({sorted(kernels)[0][:12]}); F is comparable, "
                      f"but the older products predate a release")
+    if not identity_valid:
+        details = list(identity_issues)
+        if not require_same_detector and not details:
+            details.append("strict detector-identity checks were bypassed")
+        if len(rules) > 1:
+            details.append(f"mask rules differ: {sorted(rules)}")
+        if len(kernels) > 1:
+            details.append(
+                "kernel identities differ: "
+                + repr(sorted(kernel[:12] for kernel in kernels)))
+        notes.append(
+            "require_same_detector=False compatibility override: detector "
+            "identity is not traceable; " + "; ".join(details))
     for ch in refused_channels:
         if ch not in fractions:
             fractions[ch] = refused_fraction
@@ -318,11 +412,15 @@ def mask_table_from_products(paths, refused_channels=REFUSED_CHANNELS,
                          f"{refused_fraction:g} masked rather than measured")
     src = (f"products[coarse@eta={eta:g}]" if eta != 1.0
            else f"products[{stage}]")
-    return MaskTable(fractions=dict(sorted(fractions.items())),
-                     source=src, rule=sorted(rules)[0],
-                     detector_version="+".join(sorted(packages))
-                     + f" kernel={sorted(kernels)[0][:12]}",
-                     n_frames=n_frames, notes=notes, window=window)
+    return MaskTable(
+        fractions=dict(sorted(fractions.items())), source=src,
+        rule=next(iter(rules)) if identity_valid else "unrecorded",
+        detector_version=(
+            "+".join(sorted(packages)) + f" kernel={next(iter(kernels))[:12]}"
+            if identity_valid else "unrecorded"),
+        n_frames=n_frames, notes=notes, window=window,
+        epoch=("current" if identity_valid else "unverified-detector-identity"),
+        occupancy_valid=identity_valid)
 
 
 def measured_mask_table(rates_csv: str | Path = DEFAULT_RATES_CSV,

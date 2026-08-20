@@ -344,11 +344,8 @@ class Forecast:
             # backend's strictly-positive noise-frequency contract.
             if v_frac <= V_FRAC_MIN or w_bar <= 0.0:
                 continue
-            if cfg == "chime2022":
-                expt = survey.chime2022_experiment(rf, rf_dir,
-                                                   ttot_hours=t_hours)
-            else:
-                expt = survey.chime_experiment(rf, rf_dir, ttot_hours=t_hours)
+            expt = survey.experiment_from_bank_metadata(
+                rf, rf_dir, self.bank.meta, ttot_hours=t_hours)
             expt["noise_freq_weight"] = wfn
             expt["noise_freq_mode"] = scenario.rf_mode()
             expt["vol_frac"] = float(v_frac)

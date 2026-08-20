@@ -67,6 +67,11 @@ def build_bank_main(argv=None) -> int:
     parser.add_argument("--tmin", type=float, default=1.0)
     parser.add_argument("--tmax", type=float, default=1e6)
     parser.add_argument("--nt", type=int, default=19)
+    parser.add_argument(
+        "--extra-time-hours", action="append", type=float, default=[],
+        metavar="HOURS",
+        help="insert an additional interpolation-grid time without moving the "
+             "base log grid; repeat for multiple points")
     parser.add_argument("--nproc", type=int)
     parser.add_argument("--epsilon-fg", type=float, default=1e-6)
     parser.add_argument("--k-nl0", type=float, default=0.14)
@@ -89,6 +94,14 @@ def build_bank_main(argv=None) -> int:
     if args.p_res is not None:
         overrides["P_res"] = args.p_res
     t_grid = np.logspace(np.log10(args.tmin), np.log10(args.tmax), args.nt)
+    if args.extra_time_hours:
+        extra = np.asarray(args.extra_time_hours, dtype=float)
+        if (not np.all(np.isfinite(extra)) or np.any(extra <= 0.0)
+                or np.any(extra < args.tmin) or np.any(extra > args.tmax)):
+            parser.error(
+                "--extra-time-hours must be finite, positive, and within "
+                "[--tmin, --tmax]")
+        t_grid = np.unique(np.concatenate([t_grid, extra]))
     build_bank(
         args.out, rf_dir=args.radiofisher_dir, t_grid_hours=t_grid,
         nproc=args.nproc, epsilon_fg=args.epsilon_fg, k_nl0=args.k_nl0,

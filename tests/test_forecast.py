@@ -106,7 +106,9 @@ def test_direct_forecast_uses_bank_cosmology_and_matching_cache(monkeypatch):
 
     bank = _Bank(np.eye(2), ["A", "sigma_NL"])
     bank.meta = {"config": "chime2022", "cosmology": "pact2025",
-                 "astrophysical_model_profile": "chime_overview_2022"}
+                 "astrophysical_model_profile": "chime_overview_2022",
+                 "expt_overrides": {},
+                 "provenance": {"experiment": {"settings": {}}}}
     backend = Backend()
     fc = Forecast(bank, backend, style="perbin_A", rf_dir=Path("/rf"))
     seen = {}
@@ -164,14 +166,17 @@ def test_direct_custom_cosmology_applies_the_banks_recorded_profile(monkeypatch)
     bank = _Bank(np.eye(2), ["A", "sigma_NL"])
     bank.meta = {
         "config": "bull2015", "cosmology": "planck2013",
-        "astrophysical_model_profile": "bull2015"}
+        "astrophysical_model_profile": "bull2015", "expt_overrides": {},
+        "provenance": {"experiment": {"settings": {
+            "epsilon_fg": 1e-6, "k_nl0": 0.14}}}}
     fc = Forecast(bank, Backend(), style="perbin_A", rf_dir=Path("/rf"))
     monkeypatch.setattr("baonoise.compat.bind_radiofisher",
                         lambda rf, explicit=None: Path("/rf"))
     monkeypatch.setattr("baonoise.compat.require_backend_capabilities",
                         lambda *args, **kwargs: frozenset())
     monkeypatch.setattr("baonoise.survey.chime_experiment",
-                        lambda rf, rf_dir, ttot_hours: {})
+                        lambda rf, rf_dir, ttot_hours, epsilon_fg, k_nl0: {
+                            "epsilon_fg": epsilon_fg, "k_nl0": k_nl0})
     custom = {
         "h": 0.7, "omega_M_0": 0.3, "omega_b_0": 0.05,
         "mnu": 3.0, "ns": 0.96, "sigma_8": 0.8,

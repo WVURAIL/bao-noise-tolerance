@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Consistency check: every number quoted in the paper regenerates from
-the machine-readable tables in out/ (written by scripts/run_forecast.py).
+the machine-readable tables in out/ (written by scripts/run_forecast.py and
+scripts/fg_sensitivity.py).
 
 Two guarantees, so neither side can drift silently:
   1. RECOMPUTE: each paper value is recomputed from out/*.csv (or from
@@ -223,14 +224,14 @@ def main() -> int:
     print("-- Sec 5.4: Bull-2015 foreground comparison --")
     ck.check("Bull measured worst-bin D_A penalty",
              float(measured_fg["fiducial_worst_da_penalty"]),
-             "1.46", 2)
+             "1.67", 2)
     ck.check("Bull uniform-50 survey penalty",
              float(foreground["uniform50_dtv"]["fiducial_penalty"]),
-             "1.28", 2)
+             "1.26", 2)
     ck.check("Bull foreground clean-time shift", clean_fg_shift,
-             "3.3", 1, tex_needle="3.3 per cent")
+             "3.1", 1, tex_needle="3.1 per cent")
     ck.check("maximum Bull survey-penalty shift", max_fg_penalty_shift,
-             "0.43", 2, tex_needle="0.43 per cent")
+             "1.12", 2, tex_needle="1.12 per cent")
 
     # ------------------------------------------------ normalizations
     print("-- Normalisations --")

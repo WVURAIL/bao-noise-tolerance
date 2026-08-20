@@ -249,6 +249,45 @@ def test_bull_research_banks_are_matched_strict_v2_1_0_builds():
     assert epsilon_fg == {1e-6, 1e-5}
 
 
+@pytest.mark.parametrize("name", sorted(BULL_BANK_SHA256))
+def test_each_bull_research_bank_matches_its_recorded_direct_backend(name):
+    try:
+        rf_dir = find_radiofisher_dir()
+    except FileNotFoundError:
+        pytest.skip("direct Bull-bank validation requires a RadioFisher checkout")
+    from baonoise.compat import import_radiofisher
+
+    rf, rf_dir = import_radiofisher(rf_dir)
+    bank = FisherBank(Path(__file__).resolve().parents[1] / "data" / name)
+    calculator = forecast.Forecast(
+        bank, rf=rf, style="shared_A", rf_dir=rf_dir)
+    scenario = scenarios.clean()
+    bank_sigma = calculator.sigma_A(scenario, 1.0e4, bins=[6])
+    direct_sigma = calculator.sigma_A_direct(
+        scenario, 1.0e4, bins=[6], rf_dir=rf_dir)
+    assert direct_sigma == pytest.approx(bank_sigma, rel=0.015)
+
+
+@pytest.mark.parametrize("name", sorted(BULL_BANK_SHA256))
+def test_each_bull_bank_interpolates_bin8_below_one_percent(name):
+    try:
+        rf_dir = find_radiofisher_dir()
+    except FileNotFoundError:
+        pytest.skip("Bull interpolation validation requires RadioFisher")
+    from baonoise.compat import import_radiofisher
+
+    rf, rf_dir = import_radiofisher(rf_dir)
+    bank = FisherBank(Path(__file__).resolve().parents[1] / "data" / name)
+    calculator = forecast.Forecast(
+        bank, rf=rf, style="shared_A", rf_dir=rf_dir)
+    scenario = scenarios.clean()
+    bank_sigma = calculator.sigma_A(scenario, 3300.0, bins=[8])
+    direct_sigma = calculator.sigma_A_direct(
+        scenario, 3300.0, bins=[8], rf_dir=rf_dir)
+
+    assert abs(bank_sigma / direct_sigma - 1.0) < 0.01
+
+
 def test_missing_packaged_data_fails_clearly():
     with pytest.raises(FileNotFoundError, match="package data is missing"):
         resources.data_file("not-distributed.dat")
