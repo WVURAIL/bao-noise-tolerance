@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ._validation import positive_scalar
+from ._validation import (nonnegative_scalar, positive_scalar)
 from .constants import HI_REST_FREQUENCY_MHZ
 
 HRS_MHZ = 3.6e9                  # 1 hour in MHz^-1 (radiofisher.units)
@@ -93,6 +93,77 @@ def chime2022_experiment(rf, rf_dir: str | Path,
     expt["ttot"] = ttot_hours * HRS_MHZ
     expt["n(x)"] = str(Path(rf_dir) / "chime2021" / expt["n(x)"])
     return expt
+
+
+def experiment_from_bank_metadata(rf, rf_dir: str | Path, meta: dict,
+                                  ttot_hours: float) -> dict:
+    """Reconstruct the exact experiment recorded by a strict-v2 bank.
+
+    Canonical survey factories provide callables and checkout-bound resource
+    paths that JSON provenance cannot itself recreate. Recorded scalar settings
+    and ``expt_overrides`` are then checked against that reconstruction before
+    an experiment is returned. Any unexplained setting drift fails closed.
+    """
+    from .fisherbank import experiment_settings_payload
+
+    ttot_hours = nonnegative_scalar(ttot_hours, "ttot_hours")
+    if not isinstance(meta, dict):
+        raise ValueError("bank metadata must be an object")
+    config = meta.get("config")
+    try:
+        settings = meta["provenance"]["experiment"]["settings"]
+    except (KeyError, TypeError) as exc:
+        raise ValueError(
+            "bank metadata has no recorded experiment settings") from exc
+    overrides = meta.get("expt_overrides")
+    if not isinstance(settings, dict) or not isinstance(overrides, dict):
+        raise ValueError(
+            "bank experiment settings and expt_overrides must be objects")
+
+    if config == "bull2015":
+        try:
+            epsilon_fg = nonnegative_scalar(
+                settings["epsilon_fg"], "recorded epsilon_fg")
+            k_nl0 = positive_scalar(settings["k_nl0"], "recorded k_nl0")
+        except KeyError as exc:
+            raise ValueError(
+                "Bull-2015 bank is missing recorded epsilon_fg or k_nl0") from exc
+
+        def canonical(hours):
+            return chime_experiment(
+                rf, rf_dir, ttot_hours=hours,
+                epsilon_fg=epsilon_fg, k_nl0=k_nl0)
+    elif config == "chime2022":
+        def canonical(hours):
+            return chime2022_experiment(rf, rf_dir, ttot_hours=hours)
+    else:
+        raise ValueError(
+            f"unsupported recorded experiment configuration: {config!r}")
+
+    def reconstruct(hours):
+        experiment = canonical(hours)
+        experiment.update(copy.deepcopy(overrides))
+        return experiment
+
+    reference = reconstruct(1.0)
+    reconstructed_settings = experiment_settings_payload(reference, rf_dir)
+    if reconstructed_settings != settings:
+        missing = sorted(set(settings) - set(reconstructed_settings))
+        extra = sorted(set(reconstructed_settings) - set(settings))
+        changed = sorted(
+            key for key in set(settings) & set(reconstructed_settings)
+            if settings[key] != reconstructed_settings[key])
+        details = []
+        if missing:
+            details.append(f"unreconstructed keys={missing}")
+        if extra:
+            details.append(f"unexpected canonical keys={extra}")
+        if changed:
+            details.append(f"changed keys={changed}")
+        raise ValueError(
+            "bank experiment settings cannot be reconstructed from its "
+            "recorded configuration and expt_overrides: " + "; ".join(details))
+    return reconstruct(ttot_hours)
 
 
 def chime2022_cosmo(rf, rf_dir: str | Path) -> dict:

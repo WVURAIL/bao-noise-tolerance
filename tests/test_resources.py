@@ -19,9 +19,9 @@ from baonoise.fisherbank import (ARTIFACT_FORECAST, BANK_SCHEMA_VERSION,
 
 EXPECTED_SHA256 = {
     resources.DEFAULT_BANK_NAME:
-        "e1db7121a6e7cf3d6429a01737826e8ee88fe3d708fb4972ca248547707527a8",
+        "25272a9f0fc9d59266e48314503bfb5d5fa424119bc0560128db38e5ef3a0379",
     resources.PACT2025_BANK_NAME:
-        "36fa04e610928e6abebf6d98df19e4fffa05ab6dc4e86fbc1bda2c1ab26e7cc3",
+        "693c2f974ee47c2aeebce9ef63824e2cf622c78183cbc0f945ab1278c884bfa0",
     resources.DEFAULT_RATES_NAME:
         "da8c1c1df1f3929920ac132ea037adaa7cad5f5edb215e046ec5a40281d6bde3",
     resources.PRODUCTS_MANIFEST_NAME:
@@ -41,12 +41,12 @@ CANONICAL_TEXT_RESOURCES = frozenset({
 })
 BULL_BANK_SHA256 = {
     "fisher_bank_bull2015_planck2013_epsfg1e-6.npz":
-        "e25195737eab9e7eea2cbedb6d96ac609e9a61d5ed9764bcee24d9fe74e02075",
+        "7e21a37435c6d47e83f328883c8234342a85030025ce8f316220b6cbd47b8dff",
     "fisher_bank_bull2015_planck2013_epsfg1e-5.npz":
-        "c65d4f11484022efd2491a56382fc87068aa67ee6aec6ee6f9a302aaedddfd2d",
+        "da5f188cad52526c5835b6eb2c6b7e91fd1af3fb01622bc47d269465b3b03f27",
 }
 EXPECTED_RADIOFISHER_SOURCE_SHA256 = (
-    "efad0173be49d51679cf98071ccd1dfccd386dc9b2774e202164086347a4c2cf"
+    "864980e9658c475093fc34c7da02e456bf2849d1fd239ef6152fe6508b9a68d7"
 )
 
 
@@ -247,6 +247,45 @@ def test_bull_research_banks_are_matched_strict_v2_1_0_builds():
         for bank in banks
     }
     assert epsilon_fg == {1e-6, 1e-5}
+
+
+@pytest.mark.parametrize("name", sorted(BULL_BANK_SHA256))
+def test_each_bull_research_bank_matches_its_recorded_direct_backend(name):
+    try:
+        rf_dir = find_radiofisher_dir()
+    except FileNotFoundError:
+        pytest.skip("direct Bull-bank validation requires a RadioFisher checkout")
+    from baonoise.compat import import_radiofisher
+
+    rf, rf_dir = import_radiofisher(rf_dir)
+    bank = FisherBank(Path(__file__).resolve().parents[1] / "data" / name)
+    calculator = forecast.Forecast(
+        bank, rf=rf, style="shared_A", rf_dir=rf_dir)
+    scenario = scenarios.clean()
+    bank_sigma = calculator.sigma_A(scenario, 1.0e4, bins=[6])
+    direct_sigma = calculator.sigma_A_direct(
+        scenario, 1.0e4, bins=[6], rf_dir=rf_dir)
+    assert direct_sigma == pytest.approx(bank_sigma, rel=0.015)
+
+
+@pytest.mark.parametrize("name", sorted(BULL_BANK_SHA256))
+def test_each_bull_bank_interpolates_bin8_below_one_percent(name):
+    try:
+        rf_dir = find_radiofisher_dir()
+    except FileNotFoundError:
+        pytest.skip("Bull interpolation validation requires RadioFisher")
+    from baonoise.compat import import_radiofisher
+
+    rf, rf_dir = import_radiofisher(rf_dir)
+    bank = FisherBank(Path(__file__).resolve().parents[1] / "data" / name)
+    calculator = forecast.Forecast(
+        bank, rf=rf, style="shared_A", rf_dir=rf_dir)
+    scenario = scenarios.clean()
+    bank_sigma = calculator.sigma_A(scenario, 3300.0, bins=[8])
+    direct_sigma = calculator.sigma_A_direct(
+        scenario, 3300.0, bins=[8], rf_dir=rf_dir)
+
+    assert abs(bank_sigma / direct_sigma - 1.0) < 0.01
 
 
 def test_missing_packaged_data_fails_clearly():

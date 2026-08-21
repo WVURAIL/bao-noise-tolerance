@@ -37,7 +37,7 @@ style = "perbin_A" if config == "chime2022" else "shared_A"
 fc = forecast.Forecast(bank, rf, style=style, rf_dir=rf_dir)
 print(f"bank config={config} style={style}; RadioFisher={rf_dir}")
 
-# matching cosmology + experiment factory
+# matching cosmology
 if config == "chime2022":
     cosmology_name = bank.meta["cosmology"]
     cosmo = pkcache.load_fiducial_cosmology(
@@ -45,13 +45,13 @@ if config == "chime2022":
             "cache_pk_chime2022.dat" if cosmology_name == "planck2018"
             else f"cache_pk_chime2022_{cosmology_name}.dat"),
         cosmo=cosmologies.get(cosmology_name, rf, rf_dir))
-    make_expt = lambda t: survey.chime2022_experiment(rf, rf_dir, ttot_hours=t)
 else:
     base = cosmologies.with_astrophysical_profile(
         rf.experiments.cosmo, "bull2015", rf=rf)
     cosmo = pkcache.load_fiducial_cosmology(
         rf, filesystem_data_file("cache_pk.dat"), cosmo=base)
-    make_expt = lambda t: survey.chime_experiment(rf, rf_dir, ttot_hours=t)
+make_expt = lambda t: survey.experiment_from_bank_metadata(
+    rf, rf_dir, bank.meta, ttot_hours=t)
 cosmo_fns = rf.background_evolution_splines(cosmo)
 ok = True
 

@@ -295,6 +295,26 @@ def _jsonable(value):
     return repr(value)
 
 
+def experiment_settings_payload(expt: dict, rf_dir: str | Path) -> dict:
+    """Return the canonical experiment projection stored in bank provenance.
+
+    Absolute baseline paths are checkout details, not scientific identities.
+    Paths inside RadioFisher are recorded relative to that checkout; external
+    packaged baselines are recorded by filename and separately content-hashed.
+    """
+    payload = _jsonable(expt)
+    baseline = expt.get("n(x)")
+    if baseline is not None:
+        baseline_path = Path(baseline)
+        try:
+            baseline_label = baseline_path.resolve().relative_to(
+                Path(rf_dir).resolve()).as_posix()
+        except ValueError:
+            baseline_label = baseline_path.name
+        payload["n(x)"] = baseline_label
+    return payload
+
+
 def _sha256_json(value) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"),
                          allow_nan=False).encode()
@@ -314,14 +334,7 @@ def _build_provenance() -> dict:
     expt = _CTX["make_expt"](1.0)
     baseline = expt.get("n(x)")
     baseline_path = Path(baseline) if baseline else None
-    expt_payload = _jsonable(expt)
-    if baseline_path is not None:
-        try:
-            baseline_label = baseline_path.resolve().relative_to(
-                rf_dir.resolve()).as_posix()
-        except ValueError:
-            baseline_label = baseline_path.name
-        expt_payload["n(x)"] = baseline_label
+    expt_payload = experiment_settings_payload(expt, rf_dir)
     cache_meta = pkcache.inspect_pk_cache(cachefile)
     return {
         "built_utc": dt.datetime.now(dt.timezone.utc).isoformat(),

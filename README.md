@@ -174,8 +174,8 @@ artifacts rather than installed defaults. In the matched cosmology comparison,
 the clean five-sigma time is 208.8 hours for Planck-2018 and 186.9 hours for
 P-ACT-LB, while relative masking penalties differ by at most 0.420%. In the
 Bull-2015 foreground check, raising $\epsilon_{FG}$ by a factor of ten changes
-the clean survey time by 3.3% and the tested survey-level masking penalties by
-at most 0.43%.
+the clean survey time by 3.1% and the tested survey-level masking penalties by
+at most 1.12%.
 
 Figures produced in `out/`:
 
@@ -207,6 +207,9 @@ baonoise-forecast --version             # baonoise-forecast 1.0.0
 # supported P(k) caches ship in the wheel; new or stale caches also require
 # the optional Python CAMB dependency.
 git clone https://github.com/WVURAIL/RadioFisher ../RadioFisher
+# Reviewed backend for the committed v1.0 banks; update this pin only with a
+# passing cross-repository bank verification.
+git -C ../RadioFisher checkout --detach 3cc9f34e183db9e04820c8a2e7932395ec3a0441
 
 export RADIOFISHER_DIR=../RadioFisher   # optional; sibling dir is found automatically
 pip install -e ".[pk]"                 # only when generating/refreshing P(k)
@@ -219,6 +222,27 @@ python scripts/check_dissertation_numbers.py --tex <overleaf-clone> \
     --summary-json <pilot-proxy>/data/provenance/dissertation_summary_v2.json
 python -m pytest tests/ -q
 ```
+
+The canonical rebuild command is:
+
+```bash
+NPROC=24 RADIOFISHER_DIR=../RadioFisher \
+  bash scripts/rebuild_shipped_banks.sh /tmp/baonoise-bank-rebuild
+```
+
+It produces and installs exactly
+`src/baonoise/data/fisher_bank_chime2022.npz`,
+`src/baonoise/data/fisher_bank_chime2022_pact2025.npz`,
+`data/fisher_bank_bull2015_planck2013_epsfg1e-6.npz`, and
+`data/fisher_bank_bull2015_planck2013_epsfg1e-5.npz`, then updates their test
+hashes, regenerates `out/foreground_sensitivity.csv`, and runs the paper-number
+gate. The Bull artifacts retain the 27-point logarithmic 1--10^6 hr release
+grid and add only `3162.2776601683795` hr (`10**3.5` hr). That point keeps the
+bin-8 interpolation check at 3,300 hr below its 1% gate without moving any
+existing grid point. Run the recipe only from clean, committed BAO and
+RadioFisher trees so the bank provenance names immutable source states. The
+automatic regeneration prevents a stale Bull-derived CSV from surviving a
+bank or forecast-code change.
 
 ### Dissertation number gate
 

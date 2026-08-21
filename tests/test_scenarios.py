@@ -241,8 +241,9 @@ def test_channel_and_frequency_band_masks_must_not_overlap():
 # Mask-table provenance
 # ----------------------------------------------------------------------
 
-def _product(path, channel, masked, n=400, kernel="aaaa", pkg="pp/1.0.0",
-             months=None, rejected=None, fstat=None, mu0=1.0):
+def _product(path, channel, masked, n=400, kernel="a" * 64, pkg="pp/1.0.0",
+             months=None, rejected=None, fstat=None, mu0=1.0,
+             rule="F > mu0"):
     """Minimal survey product carrying a detector contract.
 
     ``months`` (one ``YYYY-MM`` per frame) adds unit timestamps so the
@@ -262,10 +263,13 @@ def _product(path, channel, masked, n=400, kernel="aaaa", pkg="pp/1.0.0",
         valid=np.ones((n, 1), dtype=np.uint8),
         reject_mask=rej.reshape(n, 1),
         physical_channel=np.array([channel], dtype=np.int32),
-        detector_version=np.array(f"{pkg} kernel=2.1.0 kernel_sha256={kernel}"),
         detector_contract_json=np.array(json.dumps(
-            {"equivalent_mask_rule": "F > mu0", "threshold_mode": "none"})),
+            {"equivalent_mask_rule": rule, "threshold_mode": "none"})),
     )
+    if pkg is not None:
+        kernel_text = "" if kernel is None else f" kernel_sha256={kernel}"
+        arrays["detector_version"] = np.array(
+            f"{pkg} kernel=2.1.0{kernel_text}")
     if months is not None:
         assert len(months) == n
         t0 = np.array([
@@ -307,12 +311,54 @@ def test_measured_scenario_from_csv_warns_about_legacy_epoch():
 
 
 def test_mixed_kernels_are_refused(tmp_path):
-    ps = [_product(tmp_path / "a.npz", 35, 0.2, kernel="aaaa"),
-          _product(tmp_path / "b.npz", 34, 0.9, kernel="bbbb")]
+    ps = [_product(tmp_path / "a.npz", 35, 0.2, kernel="a" * 64),
+          _product(tmp_path / "b.npz", 34, 0.9, kernel="b" * 64)]
     with pytest.raises(ValueError, match="kernels"):
         chn.mask_table_from_products(ps)
     t = chn.mask_table_from_products(ps, require_same_detector=False)
     assert set(t.fractions) >= {34, 35}
+    assert not t.is_traceable
+    assert not t.is_occupancy_measurement
+    assert t.detector_version == "unrecorded"
+
+
+def test_compatibility_override_never_claims_traceable_occupancy(tmp_path):
+    product = _product(tmp_path / "valid.npz", 35, 0.2)
+    table = chn.mask_table_from_products(
+        [product], require_same_detector=False)
+
+    assert not table.is_traceable
+    assert not table.is_occupancy_measurement
+    assert table.detector_version == "unrecorded"
+    assert "strict detector-identity checks were bypassed" in table.summary()
+
+
+@pytest.mark.parametrize("kernel", [None, "short", "g" * 64, "a" * 63])
+def test_missing_or_malformed_kernel_identity_fails_closed(tmp_path, kernel):
+    product = _product(tmp_path / "bad.npz", 35, 0.2, kernel=kernel)
+    with pytest.raises(ValueError, match="valid detector identity"):
+        chn.mask_table_from_products([product])
+
+    compatible = chn.mask_table_from_products(
+        [product], require_same_detector=False)
+    assert not compatible.is_traceable
+    assert not compatible.is_occupancy_measurement
+    assert compatible.rule == "unrecorded"
+    assert "compatibility override" in compatible.summary()
+
+
+@pytest.mark.parametrize("package", [None, "unversioned", "bad=name/1.0"])
+def test_missing_or_malformed_detector_version_fails_closed(tmp_path, package):
+    product = _product(tmp_path / "bad.npz", 35, 0.2, pkg=package)
+    with pytest.raises(ValueError, match="valid detector identity"):
+        chn.mask_table_from_products([product])
+
+
+@pytest.mark.parametrize("rule", [None, "", "unrecorded", " unrecorded "])
+def test_missing_or_unrecorded_mask_rule_fails_closed(tmp_path, rule):
+    product = _product(tmp_path / "bad.npz", 35, 0.2, rule=rule)
+    with pytest.raises(ValueError, match="valid detector identity"):
+        chn.mask_table_from_products([product])
 
 
 def test_harness_drift_over_one_kernel_is_a_note_not_an_error(tmp_path):
@@ -416,8 +462,15 @@ def test_eta_requires_the_statistic_and_coarse_stage(tmp_path):
         chn.mask_table_from_products([bare], eta=1.4)
     with pytest.raises(ValueError, match="stage"):
         chn.mask_table_from_products([bare], eta=1.4, stage="fine")
-    with pytest.raises(ValueError, match="positive"):
+    with pytest.raises(ValueError, match="eta"):
         chn.mask_table_from_products([bare], eta=0.0)
+
+
+@pytest.mark.parametrize("eta", [0.0, -1.0, np.nan, np.inf, -np.inf])
+def test_eta_must_be_positive_and_finite(tmp_path, eta):
+    bare = _product(tmp_path / "bare.npz", 19, 0.5)
+    with pytest.raises(ValueError, match="eta"):
+        chn.mask_table_from_products([bare], eta=eta)
 
 
 def test_eta_scenario_carries_the_threshold(tmp_path):
