@@ -5,11 +5,19 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 
 import pytest
 
 
+FIGURE_TOOLCHAIN = ("latex", "dvipng", "kpsewhich", "pdffonts", "pdfinfo")
+_MISSING_TOOLS = [t for t in FIGURE_TOOLCHAIN if shutil.which(t) is None]
+# The renderer fails closed rather than substituting a non-Latin-Modern font,
+# so the audit only runs where the TeX and Poppler toolchain is installed.
+requires_figure_toolchain = pytest.mark.skipif(
+    bool(_MISSING_TOOLS),
+    reason="dissertation figure audit needs: " + ", ".join(_MISSING_TOOLS))
 SUBSET_TAG = re.compile(r"^[A-Z]{6}\+")
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -20,6 +28,7 @@ renderer = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(renderer)
 
 
+@requires_figure_toolchain
 def test_renderer_exports_figure_table_and_complete_caption(tmp_path):
     figure = tmp_path / "comparison.png"
     table = tmp_path / "summary.tex"
