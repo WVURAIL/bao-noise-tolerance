@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import hashlib
 import importlib.util
@@ -10,6 +11,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import string
 import subprocess
 
 import numpy as np
@@ -331,6 +333,42 @@ def _write_tex(path: Path, summary: dict[str, dict]) -> None:
     path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
+def _deterministic_subset_prefix(charset) -> str:
+    """Return a stable six-letter PDF subset tag for a set of glyph names.
+
+    matplotlib derives the tag from ``hash()``. On the Type-1/TeX path it
+    passes ``charmap.values()`` -- a dict view, which has no content hash and
+    so falls back to identity hashing -- meaning the tag tracks the view
+    object's memory address and changes on every render. (The TrueType path
+    wraps the same values in ``frozenset`` and does not have this problem.)
+    Even a frozenset would only be stable within one interpreter, because
+    string hashing is salted per process. Deriving the tag from the glyph
+    names keeps repeated builds byte-for-byte identical across runs, and
+    across machines.
+    """
+    joined = "\0".join(sorted(str(name) for name in charset))
+    value = int.from_bytes(
+        hashlib.sha256(joined.encode("utf-8")).digest()[:8], "big")
+    letters = []
+    for _ in range(6):
+        value, index = divmod(value, 26)
+        letters.append(string.ascii_uppercase[index])
+    return "".join(letters) + "+"
+
+
+@contextlib.contextmanager
+def _stable_font_subset_tags():
+    """Swap matplotlib's address-derived subset tag for a content-derived one."""
+    from matplotlib.backends.backend_pdf import PdfFile
+
+    original = PdfFile.__dict__["_get_subset_prefix"]
+    PdfFile._get_subset_prefix = staticmethod(_deterministic_subset_prefix)
+    try:
+        yield
+    finally:
+        PdfFile._get_subset_prefix = original
+
+
 def _render_figure(path: Path, channel_rows: list[dict]) -> None:
     import matplotlib.pyplot as plt
     from matplotlib.ticker import FuncFormatter
@@ -403,16 +441,17 @@ def _render_figure(path: Path, channel_rows: list[dict]) -> None:
             "Description": CAPTION,
         })
     pdf = path.with_suffix(".pdf")
-    fig.savefig(
-        pdf, bbox_inches="tight",
-        metadata={
-            "Title": "Model-only residual-shape sensitivity by ATSC channel",
-            "Author": "Dylan Gormley",
-            "Subject": CAPTION,
-            "Creator": "BaoNoiseTolerance reproducible forecast renderer",
-            "CreationDate": None,
-            "ModDate": None,
-        })
+    with _stable_font_subset_tags():
+        fig.savefig(
+            pdf, bbox_inches="tight",
+            metadata={
+                "Title": "Model-only residual-shape sensitivity by ATSC channel",
+                "Author": "Dylan Gormley",
+                "Subject": CAPTION,
+                "Creator": "BaoNoiseTolerance reproducible forecast renderer",
+                "CreationDate": None,
+                "ModDate": None,
+            })
     plt.close(fig)
     _verify_pdf_contract(pdf)
 
