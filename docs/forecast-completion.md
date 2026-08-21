@@ -411,6 +411,11 @@ the two generator source hashes, model-only scope, policy non-change, and all
 three empirical refusals. It intentionally does not hash itself. Its strict
 Draft 2020-12 contract is
 `docs/forecast-completion-release-manifest.schema.json`.
+Manifest v2 additionally records the exact audited figure-font inventory.
+The renderer loads the dissertation's T1 LaTeX style contract, fails closed
+unless every PDF font resource is embedded Type 1 Latin Modern, and omits
+`CreationDate` and `ModDate`; a repeat-render regression test requires the
+PNG, PDF, table, caption, and manifest to be byte-identical.
 The manifest also points consumers to `/bank/scientific_identity` in every
 evidence file and summarizes the clean Bao build/evaluation commits, common
 Bao scientific source manifest and content digest, and clean RadioFisher

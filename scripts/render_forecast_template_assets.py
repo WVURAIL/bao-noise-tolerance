@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
+import shutil
+import subprocess
 
 import numpy as np
 
-from baonoise.plots import GRID, MUTED, SERIES, SURFACE, setup_style
 from baonoise.residual_templates import FAMILIES
 
 
 COMPARISON_SCHEMA = "baonoise-forecast-template-comparison-csv-v1"
 CHANNEL_SCHEMA = "baonoise-forecast-channel-mapping-csv-v1"
 STATUS_SCHEMA = "baonoise-forecast-template-status-csv-v1"
-MANIFEST_SCHEMA = "baonoise-forecast-completion-release-manifest-v1"
+MANIFEST_SCHEMA = "baonoise-forecast-completion-release-manifest-v2"
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_SCHEMA_PATH = (
     ROOT / "docs" / "forecast-completion-release-manifest.schema.json")
@@ -34,7 +35,7 @@ TEXT_DISPLAY = {
     "wedge_like": "Wedge-like",
     "k_shell_localized": "Localized $k$ shell",
 }
-PDF_METADATA_DATE = datetime(2026, 8, 20, tzinfo=timezone.utc)
+FIGURE_STYLE_PATH = ROOT / "scripts" / "dissertation" / "style.py"
 
 CAPTION = (
     "Model-only residual-amplitude tolerance on the common f-sigma-8 target "
@@ -58,6 +59,64 @@ def _read_rows(path: Path, schema: str) -> list[dict]:
     if not rows or any(row.get("schema") != schema for row in rows):
         raise ValueError(f"{path} is not a complete {schema} table")
     return rows
+
+
+def _dissertation_style():
+    spec = importlib.util.spec_from_file_location(
+        "baonoise_forecast_dissertation_style", FIGURE_STYLE_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(
+            f"cannot load dissertation style contract from {FIGURE_STYLE_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _verify_pdf_contract(path: Path) -> dict:
+    """Fail closed on fonts or metadata rejected by the dissertation audit."""
+    tools = {name: shutil.which(name) for name in ("pdffonts", "pdfinfo")}
+    missing = sorted(name for name, resolved in tools.items() if resolved is None)
+    if missing:
+        raise RuntimeError(
+            "PDF audit requires installed Poppler command(s): "
+            + ", ".join(missing))
+    fonts = subprocess.run(
+        [tools["pdffonts"], str(path)], check=True, capture_output=True,
+        text=True).stdout
+    font_lines = [line for line in fonts.splitlines()[2:] if line.strip()]
+    if not font_lines:
+        raise RuntimeError("PDF audit found no embedded fonts")
+    audited_fonts = []
+    for line in font_lines:
+        columns = line.split()
+        if len(columns) < 8:
+            raise RuntimeError(f"cannot parse pdffonts row: {line}")
+        name = columns[0]
+        font_type = " ".join(columns[1:3])
+        embedded = columns[4]
+        if font_type != "Type 1" or embedded != "yes" \
+                or not name.startswith("LM"):
+            raise RuntimeError(
+                "PDF font contract requires embedded Type 1 Latin Modern; "
+                f"found {name} ({font_type}, embedded={embedded})")
+        audited_fonts.append({
+            "name": name, "type": font_type, "embedded": True})
+    info = subprocess.run(
+        [tools["pdfinfo"], str(path)], check=True, capture_output=True,
+        text=True).stdout
+    forbidden_metadata = [
+        field for field in ("CreationDate:", "ModDate:")
+        if any(line.startswith(field) for line in info.splitlines())]
+    if forbidden_metadata:
+        raise RuntimeError(
+            "PDF must omit wall-clock metadata: "
+            + ", ".join(forbidden_metadata))
+    return {
+        "font_contract": "T1 Latin Modern via LaTeX",
+        "all_fonts_embedded_type1": True,
+        "font_names": sorted({item["name"] for item in audited_fonts}),
+        "creation_modification_dates_included": False,
+    }
 
 
 def _file_sha256(path: Path) -> str:
@@ -267,7 +326,8 @@ def _render_figure(path: Path, channel_rows: list[dict]) -> None:
     import matplotlib.pyplot as plt
     from matplotlib.ticker import FuncFormatter
 
-    setup_style()
+    style = _dissertation_style()
+    style.configure(require_tex=True)
     fig, axes = plt.subplots(2, 1, figsize=(8.0, 6.2), sharex=True)
     fields = (
         ("perbin_conservative_tolerance",
@@ -275,13 +335,14 @@ def _render_figure(path: Path, channel_rows: list[dict]) -> None:
         ("combined_conservative_tolerance",
          "(b) Joint multi-redshift-bin Fisher estimator"),
     )
-    colors = dict(zip(FAMILIES, SERIES[:len(FAMILIES)]))
+    colors = dict(zip(FAMILIES, style.SERIES[:len(FAMILIES)]))
     straddling_channels = (17, 20, 23, 26, 30, 34)
     for ax, (field, title) in zip(axes, fields):
         for channel in straddling_channels:
             ax.axvspan(
                 channel - 0.48, channel + 0.48,
-                facecolor=GRID, alpha=0.30, edgecolor="none", zorder=0)
+                facecolor=style.GRID, alpha=0.30,
+                edgecolor="none", zorder=0)
         for family in FAMILIES:
             rows = sorted(
                 (row for row in channel_rows if row["family"] == family),
@@ -293,17 +354,17 @@ def _render_figure(path: Path, channel_rows: list[dict]) -> None:
                 label=DISPLAY[family], lw=1.75)
             ax.plot(
                 x, y, linestyle="none", marker="o", ms=3.4,
-                color=colors[family], markeredgecolor=SURFACE,
+                color=colors[family], markeredgecolor=style.PAPER,
                 markeredgewidth=0.65)
         ax.set_yscale("log")
         ax.set_ylim(1.2e-3, 4.6e-3)
         ax.set_yticks([1.5e-3, 2e-3, 3e-3, 4e-3])
         ax.yaxis.set_major_formatter(FuncFormatter(
             lambda value, _position: f"{1e3 * value:g}"))
-        ax.grid(True, axis="y", which="major")
+        style.clean_axes(ax, grid="y")
         ax.set_title(title, loc="left", fontsize=10.5)
         ax.set_ylabel(r"Accepted $f\sigma_8$ tolerance [$\times10^{-3}$]")
-        ax.spines["bottom"].set_color(GRID)
+        ax.spines["bottom"].set_color(style.GRID)
         ax.spines["left"].set_visible(False)
     axes[1].set_xticks(range(14, 37))
     axes[1].set_xticklabels([str(value) for value in range(14, 37)], fontsize=8)
@@ -313,7 +374,7 @@ def _render_figure(path: Path, channel_rows: list[dict]) -> None:
         0.01, -0.30,
         "Gray bands mark channels crossing a forecast-bin edge; the smaller "
         "overlap-bin tolerance is plotted.",
-        transform=axes[1].transAxes, color=MUTED, fontsize=8.4,
+        transform=axes[1].transAxes, color=style.MUTED, fontsize=8.4,
         va="top", ha="left")
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(
@@ -340,10 +401,11 @@ def _render_figure(path: Path, channel_rows: list[dict]) -> None:
             "Author": "Dylan Gormley",
             "Subject": CAPTION,
             "Creator": "BaoNoiseTolerance reproducible forecast renderer",
-            "CreationDate": PDF_METADATA_DATE,
-            "ModDate": PDF_METADATA_DATE,
+            "CreationDate": None,
+            "ModDate": None,
         })
     plt.close(fig)
+    _verify_pdf_contract(pdf)
 
 
 def _write_manifest(path: Path, *, comparison: Path, channels_path: Path,
@@ -376,9 +438,10 @@ def _write_manifest(path: Path, *, comparison: Path, channels_path: Path,
         raise ValueError(
             "status table must retain all three empirical refusals")
     scientific_identities = _scientific_identity_summary(evidence_paths)
+    figure_rendering = _verify_pdf_contract(figure.with_suffix(".pdf"))
     payload = {
         "schema": MANIFEST_SCHEMA,
-        "schema_version": 1,
+        "schema_version": 2,
         "manifest_schema_sha256": _file_sha256(MANIFEST_SCHEMA_PATH),
         "wall_clock_fields_included": False,
         "absolute_paths_included": False,
@@ -412,6 +475,7 @@ def _write_manifest(path: Path, *, comparison: Path, channels_path: Path,
             "existing_policy_status_or_ranking_changed": False,
         },
         "scientific_identities": scientific_identities,
+        "figure_rendering": figure_rendering,
         "empirical_template_refusals": empirical_refusals,
         "limitations": [
             "analytic unit-response shapes are sensitivity hypotheses, not "

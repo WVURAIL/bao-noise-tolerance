@@ -39,13 +39,13 @@
     },
     {
       "path": "out/forecast_completion_channel_tolerances.png",
-      "sha256": "336d7197a8d1d08fb8ee3fc592f123ee2af7f2d5accdcbda3ffe78d821b2e64a",
-      "size_bytes": 173180
+      "sha256": "573779de7c71b21554aad1acccef965f8971cfbde6688bbd41674fa74ca5a7f3",
+      "size_bytes": 109765
     },
     {
       "path": "out/forecast_completion_channel_tolerances.pdf",
-      "sha256": "ca0675db9ca1b4f7b702b1db89fc0af1a4adf7d76cdc6d2448980af244832445",
-      "size_bytes": 42524
+      "sha256": "b1c88b79460cc4d92080fe76076a49e0e087bb9972624d9fff69079d1e7c3f60",
+      "size_bytes": 768723
     },
     {
       "path": "out/forecast_completion_template_summary.tex",
@@ -59,8 +59,8 @@
     },
     {
       "path": "docs/forecast-completion-release-manifest.schema.json",
-      "sha256": "a33409814d9ea2d69a6cb7ebcf4416bd80da6572631e78e0ebf8e9fc0f2d7237",
-      "size_bytes": 6855
+      "sha256": "9c69efa62543e2e1f6f6cd0d29ccfeca3ec52f83b463f6dec1dc5b4b4893a24c",
+      "size_bytes": 7519
     }
   ],
   "empirical_template_refusals": [
@@ -80,6 +80,23 @@
       "status": "data_dependent_incomplete"
     }
   ],
+  "figure_rendering": {
+    "all_fonts_embedded_type1": true,
+    "creation_modification_dates_included": false,
+    "font_contract": "T1 Latin Modern via LaTeX",
+    "font_names": [
+      "LMMathItalic12-Regular",
+      "LMMathItalic8-Regular",
+      "LMMathItalic9-Regular",
+      "LMMathSymbols6-Regular",
+      "LMMathSymbols9-Regular",
+      "LMRoman10-Regular",
+      "LMRoman12-Regular",
+      "LMRoman6-Regular",
+      "LMRoman8-Regular",
+      "LMRoman9-Regular"
+    ]
+  },
   "generators": [
     {
       "path": "scripts/forecast_template_comparison.py",
@@ -87,7 +104,7 @@
     },
     {
       "path": "scripts/render_forecast_template_assets.py",
-      "sha256": "007484a78db108d0398793f89d06e2b6bf5ac0ae699efcea9abc4d17708f3f9d"
+      "sha256": "78a31e31ebbdce14faf44fd0fd09a58b42b99d20049e18b84a6adbc7f58a52f8"
     }
   ],
   "limitations": [
@@ -95,9 +112,9 @@
     "boundary-channel propagation takes the minimum accepted tolerance across every non-zero-overlap bin",
     "rejected dilation values are retained for diagnosis and are not eligible for channel-policy propagation"
   ],
-  "manifest_schema_sha256": "a33409814d9ea2d69a6cb7ebcf4416bd80da6572631e78e0ebf8e9fc0f2d7237",
-  "schema": "baonoise-forecast-completion-release-manifest-v1",
-  "schema_version": 1,
+  "manifest_schema_sha256": "9c69efa62543e2e1f6f6cd0d29ccfeca3ec52f83b463f6dec1dc5b4b4893a24c",
+  "schema": "baonoise-forecast-completion-release-manifest-v2",
+  "schema_version": 2,
   "scientific_identities": {
     "all_build_evaluation_pairs_verified_equal": true,
     "authoritative_identity_json_pointer": "/bank/scientific_identity",

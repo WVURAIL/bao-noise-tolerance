@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/djgormley/bao-noise-tolerance/blob/main/docs/forecast-completion-release-manifest.schema.json",
-  "title": "BaoNoiseTolerance forecast-completion release manifest v1",
+  "title": "BaoNoiseTolerance forecast-completion release manifest v2",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -15,14 +15,15 @@
     "generators",
     "scientific_scope",
     "scientific_identities",
+    "figure_rendering",
     "empirical_template_refusals",
     "limitations"
   ],
   "properties": {
     "schema": {
-      "const": "baonoise-forecast-completion-release-manifest-v1"
+      "const": "baonoise-forecast-completion-release-manifest-v2"
     },
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "manifest_schema_sha256": {"$ref": "#/$defs/sha256"},
     "wall_clock_fields_included": {"const": false},
     "absolute_paths_included": {"const": false},
@@ -138,6 +139,27 @@
           }
         },
         "commit_note": {"type": "string", "minLength": 1}
+      }
+    },
+    "figure_rendering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "font_contract",
+        "all_fonts_embedded_type1",
+        "font_names",
+        "creation_modification_dates_included"
+      ],
+      "properties": {
+        "font_contract": {"const": "T1 Latin Modern via LaTeX"},
+        "all_fonts_embedded_type1": {"const": true},
+        "font_names": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^LM"}
+        },
+        "creation_modification_dates_included": {"const": false}
       }
     },
     "empirical_template_refusals": {
