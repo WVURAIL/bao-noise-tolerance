@@ -5,3 +5,11 @@ src/baonoise/data/*.csv text eol=lf
 src/baonoise/data/*.json text eol=lf
 src/baonoise/data/*.npz binary
 src/baonoise/data/*.dat text eol=lf
+
+# Release evidence hashes identify the checked-in bytes, independent of a
+# contributor's core.autocrlf setting.
+docs/*.schema.json text eol=lf
+out/forecast_completion_*.json text eol=lf
+out/forecast_completion_*.csv text eol=lf
+out/forecast_completion_*.tex text eol=lf
+out/forecast_completion_*.txt text eol=lf

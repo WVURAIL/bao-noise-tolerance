@@ -293,6 +293,26 @@ noise-normalized family, non-averaging fixed-physical limit, named
 analytic residual shapes, complete refusal ledger, and explicitly versioned
 JSON opt-in are documented in
 [the model-only forecast completion contract](docs/forecast-completion.md).
+That contract now includes actual all-seven-DTV-bin executions for the scalar
+noise-shaped response and the authenticated `low_kparallel`, `wedge_like`,
+and `k_shell_localized` families. Rebuild the compact bin comparison,
+conservative ATSC-channel map, execution/refusal register, LaTeX summary, and
+PNG/PDF dissertation figure with:
+
+```bash
+PYTHONPATH=src python3 scripts/forecast_template_comparison.py \
+  --evidence noise_shaped=out/forecast_completion_all_dtv_bins.json \
+  --evidence low_kparallel=out/forecast_completion_all_dtv_bins_low_kparallel.json \
+  --evidence wedge_like=out/forecast_completion_all_dtv_bins_wedge_like.json \
+  --evidence k_shell_localized=out/forecast_completion_all_dtv_bins_k_shell_localized.json
+PYTHONPATH=src python3 scripts/render_forecast_template_assets.py
+```
+
+The three empirical visibility families--frequency-localized,
+baseline-localized, and sidereal-coherent--remain explicit
+`data_dependent_incomplete` refusals. The model-only grid does not invent the
+missing telescope coordinates or select one analytic shape as the measured
+channel policy.
 
 Each script checks the artifact kind, cosmology, astrophysical profile,
 unit-response normalization, and (where applicable) `kfg_fac` before reading

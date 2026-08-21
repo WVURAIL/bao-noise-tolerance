@@ -270,7 +270,8 @@ channel masks or choose an excision policy. Its machine-readable contract is
 schema document's SHA-256 alongside the evaluator and builder-wrapper hashes.
 
 At the one-on-sky-year reference time the two amplitude families coincide.
-The all-bin export gives the following central combined-estimator tolerances;
+The original scalar-unit, noise-shaped all-bin export gives the following
+central combined-estimator tolerances;
 each value is the allowed residual amplitude in the declared residual-to-noise
 normalization, not the target parameter's error unit. A dagger marks a value
 that is retained for diagnosis but must not be propagated because its
@@ -301,6 +302,156 @@ number gates. It adds a separate coherent-residual admissibility constraint
 for later channel-policy propagation. Only accepted points may be used for
 that propagation; the retained rejected values identify where a denser or
 better-conditioned model study is required before making a policy claim.
+
+### Analytic-template completion and channel propagation
+
+The scalar-unit run above is no longer the only model-only shape evaluation.
+The default-parameter `low_kparallel`, `wedge_like`, and
+`k_shell_localized` templates were each built as a separate three-time
+response bank and executed over all seven DTV-overlap bins. Every named bank
+authenticates template API version 1 and the formula-source SHA-256
+`fb34c9963c42ba7faea997d95b1dc20aabbce006dec676c03ed161d05977a0e4`.
+The evaluation refuses a bank if that identity does not match the installed
+formula implementation. The scalar noise-shaped reference predates named
+metadata and is therefore labeled exactly as a scalar unit response that is
+algebraically equivalent to the named noise-shaped formula; it is not
+misrepresented as a named-template-authenticated archive.
+
+The executed disposition summary is:
+
+| residual shape | per-bin, noise-normalized A/R (21) | combined, noise-normalized A/R (63) | combined, fixed-physical A/R (63) | accepted one-year per-bin `fs8` range | accepted one-year combined `fs8` range |
+|:---|---:|---:|---:|---:|---:|
+| scalar-unit noise-shaped | 13/8 | 42/21 | 42/21 | 0.001503--0.001951 | 0.001620--0.002359 |
+| `low_kparallel` | 15/6 | 42/21 | 42/21 | 0.002165--0.002785 | 0.002170--0.002794 |
+| `wedge_like` | 13/8 | 40/23 | 40/23 | 0.001409--0.001911 | 0.001455--0.002013 |
+| `k_shell_localized` | 14/7 | 39/24 | 39/24 | 0.003085--0.003621 | 0.003401--0.003795 |
+
+Here A/R means accepted/rejected parameter points after the full stability
+gate, not merely whether a central inversion returned a number. The per-bin
+path evaluates three native targets in seven bins at the one-year reference,
+so its denominator is 21. Each combined time-family path evaluates three
+targets in seven bins at 0.9, 1.0, and 1.1 years, so its denominator is 63.
+The fixed-physical and noise-normalized central values coincide at the
+one-year reference by definition. Away from that reference, their response
+and tolerance scalings remain algebraically distinct even though the
+acceptance gate is deliberately applied to the same bank-native tolerance and
+therefore gives the same disposition count here.
+
+The exact response-bank, numerical-grid, and evidence identities are:
+
+| residual shape | execution bank SHA-256 | numerical Fisher-grid SHA-256 | complete-v2 evidence SHA-256 |
+|:---|:---|:---|:---|
+| scalar-unit noise-shaped | `4b148a7fece58016017c50cf158db3f6afa2823d4e495ca34d5ebe1846cdd61f` | `7fbe39a9f44f5f6e65c68fe1b04f276a276549760b6878046c2833b6ac6c0eda` | `d958db9f2be82dc31e43e057cde636e46b67dfb8c6df0ce36bbbec0b0edc8e2a` |
+| `low_kparallel` | `3e6f98203f55c63fb99de8e8607508a4a8a9b101b62d36a3c60f28d71dcd58ba` | `fa13c35f9d0fd57c54741222bb4144b6bf1c98fd1322a5bb5aa87edd46414a2f` | `6ac870c6c1eb12dfa4221686f994d594d8734b56643dede6032dce22f5dd7a42` |
+| `wedge_like` | `6cd8ed822d11a30f29bb20334ff2c7bd80c9f6afa381d32f22c8bd30cb5c3d84` | `4f313c5c9449040f917af64bd24cfb963a059621e74ec902c03764c45d5a2ebb` | `78af89f887a41486a872ce09d6d6d72dab8ef2cb30320ba85b7b83eeed41ce1d` |
+| `k_shell_localized` | `3a4c3a14989d81d9eea3ebc272178ce7600265baccd0ba85ae169d46d615495f` | `0b5190cb658954d7b3bdf6f7e147b965c42f1f79f2403d15ddf0ea1ddccf0e8b` | `230d81760c86f8924012b9910d1eb03f3b536bed1fb863caff0ec7545b9088f3` |
+
+The channel export uses `fs8`, the target with the same definition in the
+per-bin and combined estimators. It computes the physical-frequency overlap
+from the 21-cm rest frequency and assigns every channel to every bin with
+strictly positive overlap:
+
+| ATSC channels | contributing forecast bins |
+|:---|:---|
+| 14--16 | 11 |
+| 17 | 10 and 11 |
+| 18--19 | 10 |
+| 20 | 9 and 10 |
+| 21--22 | 9 |
+| 23 | 8 and 9 |
+| 24--25 | 8 |
+| 26 | 7 and 8 |
+| 27--29 | 7 |
+| 30 | 6 and 7 |
+| 31--33 | 6 |
+| 34 | 5 and 6 |
+| 35--36 | 5 |
+
+For a boundary-crossing channel, propagation takes the minimum accepted
+tolerance over every non-zero-overlap bin. It does not average tolerances by
+bandwidth, because contamination in either part of a physical channel can
+bias its corresponding redshift bin. All 92 family-by-channel rows have an
+accepted per-bin and combined `fs8` mapping. The combined-to-per-bin tolerance
+ratio ranges from 1.078--1.231 for the noise-shaped response, 1.002--1.003 for
+`low_kparallel`, 1.033--1.054 for `wedge_like`, and 1.023--1.102 for
+`k_shell_localized`.
+
+Across all channels and both estimators, the analytic strictness ordering is
+`wedge_like`, scalar-unit noise-shaped, `low_kparallel`, then
+`k_shell_localized`, where a smaller tolerance is stricter. This ordering does
+**not** alter an existing channel-policy status or ranking. The four shapes
+are equally unit-normalized model hypotheses; no empirical result selects
+their relative plausibility, the shared target here is `fs8` rather than the
+legacy policy's hard-coded `aperp` tolerance, and rejected dilation points are
+not eligible for propagation. The export records `none` for both policy-change
+fields on every row. It is a sensitivity envelope for a later policy analysis,
+not a replacement policy decision.
+
+The machine-readable assets are:
+
+- `out/forecast_completion_all_dtv_bins.json` and the corresponding
+  `low_kparallel`, `wedge_like`, and `k_shell_localized` complete-v2 JSON
+  ledgers;
+- `out/forecast_completion_template_comparison.csv`, a 28-row
+  `baonoise-forecast-template-comparison-csv-v1` bin table;
+- `out/forecast_completion_channel_mapping.csv`, a 92-row
+  `baonoise-forecast-channel-mapping-csv-v1` conservative channel map;
+- `out/forecast_completion_template_status.csv`, a seven-row
+  `baonoise-forecast-template-status-csv-v1` execution/refusal register;
+- `out/forecast_completion_template_summary.tex`, a dissertation-ready
+  disposition table; and
+- `out/forecast_completion_channel_tolerances.{png,pdf}` with its exact
+  caption and limitations in
+  `out/forecast_completion_channel_tolerances_caption.txt`.
+
+`out/forecast_completion_release_manifest.json` is the timestamp-free,
+absolute-path-free release index for those inputs, derived assets, and its
+schema document. It records each relative path, byte count, and SHA-256, plus
+the two generator source hashes, model-only scope, policy non-change, and all
+three empirical refusals. It intentionally does not hash itself. Its strict
+Draft 2020-12 contract is
+`docs/forecast-completion-release-manifest.schema.json`.
+The manifest also points consumers to `/bank/scientific_identity` in every
+evidence file and summarizes the clean Bao build/evaluation commits, common
+Bao scientific source manifest and content digest, and clean RadioFisher
+commit, source manifest, and content digest. The scalar baseline and named
+template banks carry different Bao commit IDs because release-only scripts and
+documentation were committed between runs; their canonical scientific-source
+digest is identical, and that distinction is recorded rather than hidden.
+
+The figure caption is: *Model-only residual-amplitude tolerance on the common
+f-sigma-8 target at one on-sky year, mapped to ATSC channels 14--36. Panel (a)
+uses the independent per-bin Appendix-A estimator and panel (b) uses the joint
+multi-redshift-bin Fisher estimator. For a channel crossing a redshift-bin
+edge, the plotted value is the smaller accepted tolerance over every bin with
+non-zero frequency overlap; it is not an overlap-weighted average. All plotted
+f-sigma-8 points pass the plus/minus-10-percent stability gate. The four curves
+are analytic unit-response sensitivity hypotheses normalized to
+contemporaneous thermal-noise power, not empirically inferred template
+probabilities or measured channel residuals. Frequency-, baseline-, and
+sidereal-dependent visibility templates remain explicitly data-dependent and
+incomplete.*
+
+Reproduce the comparison and rendered assets after generating the four
+complete-v2 evidence files with:
+
+```bash
+PYTHONPATH=src python3 scripts/forecast_template_comparison.py \
+  --evidence noise_shaped=out/forecast_completion_all_dtv_bins.json \
+  --evidence low_kparallel=out/forecast_completion_all_dtv_bins_low_kparallel.json \
+  --evidence wedge_like=out/forecast_completion_all_dtv_bins_wedge_like.json \
+  --evidence k_shell_localized=out/forecast_completion_all_dtv_bins_k_shell_localized.json
+PYTHONPATH=src python3 scripts/render_forecast_template_assets.py
+```
+
+No empirical visibility template was fabricated to complete this grid. The
+frequency-localized template still requires authenticated pilot-proxy
+residual spectra and a Fisher interface that exposes physical frequency. The
+baseline-localized template still requires baseline-resolved residual
+power/covariance and a baseline coordinate. The sidereal-coherent template
+still requires sidereal-time-resolved residual covariance/coherence and its
+window-function coupling. Each remains explicitly
+`data_dependent_incomplete` in the status export.
 
 ## JSON contract
 
