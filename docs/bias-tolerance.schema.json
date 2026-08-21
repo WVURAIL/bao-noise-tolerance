@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:baonoise:schema:bias-tolerance:v1",
+  "title": "baonoise coherent-residual bias-tolerance report",
+  "type": "object",
+  "required": [
+    "schema",
+    "schema_version",
+    "generated_utc",
+    "bank",
+    "estimator",
+    "residual_amplitude",
+    "request",
+    "bins"
+  ],
+  "properties": {
+    "schema": {"const": "baonoise-bias-tolerance-v1"},
+    "schema_version": {"const": 1},
+    "generated_utc": {"type": "string", "format": "date-time"},
+    "bank": {
+      "type": "object",
+      "required": [
+        "path", "filename", "sha256", "schema_version", "artifact_kind",
+        "config", "cosmology", "astrophysical_model_profile", "P_res",
+        "expt_overrides", "expt_overrides_sha256", "foreground_settings",
+        "foreground_settings_sha256", "time_grid", "built_utc",
+        "scientific_identity"
+      ],
+      "properties": {
+        "path": {"type": "string"},
+        "filename": {"type": "string"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "schema_version": {"type": "integer"},
+        "artifact_kind": {"const": "bias_response"},
+        "config": {"type": "string"},
+        "cosmology": {"type": "string"},
+        "astrophysical_model_profile": {"type": "string"},
+        "P_res": {},
+        "expt_overrides": {"type": "object"},
+        "expt_overrides_sha256": {"$ref": "#/$defs/sha256"},
+        "foreground_settings": {
+          "type": "object",
+          "required": ["epsilon_fg", "k_nl0", "kfg_fac", "wedge", "use"],
+          "properties": {
+            "epsilon_fg": {},
+            "k_nl0": {},
+            "kfg_fac": {"type": ["number", "null"]},
+            "wedge": {},
+            "use": {}
+          },
+          "additionalProperties": false
+        },
+        "foreground_settings_sha256": {"$ref": "#/$defs/sha256"},
+        "time_grid": {
+          "type": "object",
+          "required": [
+            "minimum_hours", "maximum_hours", "number_of_samples"
+          ],
+          "properties": {
+            "minimum_hours": {"type": "number", "exclusiveMinimum": 0},
+            "maximum_hours": {"type": "number", "exclusiveMinimum": 0},
+            "number_of_samples": {"type": "integer", "minimum": 2}
+          },
+          "additionalProperties": false
+        },
+        "built_utc": {"type": "string", "format": "date-time"},
+        "scientific_identity": {
+          "type": "object",
+          "required": [
+            "schema", "schema_version", "bank_build", "evaluation",
+            "verified_equal"
+          ],
+          "properties": {
+            "schema": {
+              "const": "baonoise-scientific-evaluation-identity-v1"
+            },
+            "schema_version": {"const": 1},
+            "bank_build": {"$ref": "#/$defs/scientificInputs"},
+            "evaluation": {"$ref": "#/$defs/scientificInputs"},
+            "verified_equal": {"const": true}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "estimator": {
+      "type": "object",
+      "required": ["name", "scope"],
+      "properties": {
+        "name": {
+          "enum": ["perbin_appendix_a", "overview_combined_multibin"]
+        },
+        "scope": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "residual_amplitude": {
+      "type": "object",
+      "required": [
+        "time_scaling", "reported_amplitude_unit", "physical_interpretation",
+        "reference_hours",
+        "reference_years", "thermal_power_scaling_assumption",
+        "bank_response_definition", "reported_amplitude_application"
+      ],
+      "properties": {
+        "time_scaling": {
+          "enum": [
+            "noise_normalized_at_each_time",
+            "fixed_physical_at_reference_time"
+          ]
+        },
+        "reported_amplitude_unit": {"type": "string"},
+        "physical_interpretation": {"type": "string"},
+        "reference_hours": {"$ref": "#/$defs/nullableNumber"},
+        "reference_years": {"$ref": "#/$defs/nullableNumber"},
+        "thermal_power_scaling_assumption": {"type": "string"},
+        "bank_response_definition": {"type": "string"},
+        "reported_amplitude_application": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "zeta", "years", "parameters", "bin_indices",
+        "stability_fraction", "maximum_tolerance_drift_ratio"
+      ],
+      "properties": {
+        "zeta": {"type": "number", "exclusiveMinimum": 0},
+        "years": {"type": "array", "items": {"type": "number"}},
+        "parameters": {"type": "array", "items": {"type": "string"}},
+        "bin_indices": {"type": "array", "items": {"type": "integer"}},
+        "stability_fraction": {"type": "number"},
+        "maximum_tolerance_drift_ratio": {"type": "number"}
+      },
+      "additionalProperties": false
+    },
+    "bins": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/bin"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nullableSha256": {
+      "oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]
+    },
+    "nullableNumber": {"type": ["number", "null"]},
+    "scientificInputs": {
+      "type": "object",
+      "required": [
+        "baonoise", "radiofisher", "cosmology", "pk_cache", "experiment"
+      ],
+      "properties": {
+        "built_utc": {"type": "string", "format": "date-time"},
+        "baonoise": {"type": "object"},
+        "radiofisher": {"type": "object"},
+        "cosmology": {"type": "object"},
+        "pk_cache": {"type": "object"},
+        "experiment": {"type": "object"},
+        "expt_overrides": {"type": "object"},
+        "foreground_settings": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "evaluation": {
+      "type": "object",
+      "required": [
+        "label", "scale", "t_hours", "target_name", "response_name",
+        "target_units", "fiducial_DV_Mpc", "bank_time_grid_position",
+        "sigma", "dtheta_d_current_noise_ratio", "time_scaling_multiplier",
+        "dtheta_d_reported_amplitude", "r_tolerance_current_noise_ratio",
+        "r_tolerance", "condition_number", "minimum_eigenvalue",
+        "maximum_eigenvalue", "eigenvalue_cutoff", "discarded_eigenmodes",
+        "eigensystem_preconditioning", "preconditioning_scale_minimum",
+        "preconditioning_scale_maximum",
+        "valid", "failure_reason"
+      ],
+      "properties": {
+        "label": {"enum": ["lower", "central", "upper"]},
+        "scale": {"type": "number"},
+        "t_hours": {"type": "number"},
+        "target_name": {"type": ["string", "null"]},
+        "target_units": {"type": "string"},
+        "fiducial_DV_Mpc": {"$ref": "#/$defs/nullableNumber"},
+        "response_name": {"type": "string"},
+        "bank_time_grid_position": {
+          "enum": ["below_minimum", "inside", "above_maximum"]
+        },
+        "sigma": {"$ref": "#/$defs/nullableNumber"},
+        "dtheta_d_current_noise_ratio": {"$ref": "#/$defs/nullableNumber"},
+        "time_scaling_multiplier": {"type": "number"},
+        "dtheta_d_reported_amplitude": {"$ref": "#/$defs/nullableNumber"},
+        "r_tolerance_current_noise_ratio": {"$ref": "#/$defs/nullableNumber"},
+        "r_tolerance": {"$ref": "#/$defs/nullableNumber"},
+        "condition_number": {"$ref": "#/$defs/nullableNumber"},
+        "minimum_eigenvalue": {"$ref": "#/$defs/nullableNumber"},
+        "maximum_eigenvalue": {"$ref": "#/$defs/nullableNumber"},
+        "eigenvalue_cutoff": {"$ref": "#/$defs/nullableNumber"},
+        "discarded_eigenmodes": {"type": ["integer", "null"]},
+        "eigensystem_preconditioning": {
+          "const": "sqrt_fisher_diagonal"
+        },
+        "preconditioning_scale_minimum": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "preconditioning_scale_maximum": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "valid": {"type": "boolean"},
+        "failure_reason": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "parameterPoint": {
+      "type": "object",
+      "required": [
+        "parameter", "target_name", "t_hours", "central", "stability",
+        "perturbations", "accepted", "rejection_reasons"
+      ],
+      "properties": {
+        "parameter": {"type": "string"},
+        "target_name": {"type": ["string", "null"]},
+        "t_hours": {"type": "number"},
+        "central": {"$ref": "#/$defs/evaluation"},
+        "stability": {
+          "type": "object",
+          "required": [
+            "fractional_time_perturbation",
+            "maximum_allowed_tolerance_ratio",
+            "gate_quantity",
+            "observed_tolerance_ratio",
+            "observed_reported_amplitude_tolerance_ratio",
+            "bias_response_sign_count"
+          ],
+          "properties": {
+            "fractional_time_perturbation": {"type": "number"},
+            "maximum_allowed_tolerance_ratio": {"type": "number"},
+            "gate_quantity": {
+              "const": "r_tolerance_current_noise_ratio"
+            },
+            "observed_tolerance_ratio": {
+              "$ref": "#/$defs/nullableNumber"
+            },
+            "observed_reported_amplitude_tolerance_ratio": {
+              "$ref": "#/$defs/nullableNumber"
+            },
+            "bias_response_sign_count": {"type": ["integer", "null"]}
+          },
+          "additionalProperties": false
+        },
+        "perturbations": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"$ref": "#/$defs/evaluation"}
+        },
+        "accepted": {"type": "boolean"},
+        "rejection_reasons": {
+          "type": "array", "items": {"type": "string"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "bin": {
+      "type": "object",
+      "required": [
+        "bin_index", "z_low", "z_center", "z_high", "points", "summary"
+      ],
+      "properties": {
+        "bin_index": {"type": "integer"},
+        "z_low": {"type": "number"},
+        "z_center": {"type": "number"},
+        "z_high": {"type": "number"},
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["years", "t_hours", "parameters"],
+            "properties": {
+              "years": {"type": "number"},
+              "t_hours": {"type": "number"},
+              "parameters": {
+                "type": "object",
+                "additionalProperties": {"$ref": "#/$defs/parameterPoint"}
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "summary": {
+          "type": "object",
+          "required": [
+            "requested_parameter_points", "accepted_parameter_points",
+            "rejected_parameter_points", "binding_accepted_tolerance"
+          ],
+          "properties": {
+            "requested_parameter_points": {"type": "integer"},
+            "accepted_parameter_points": {"type": "integer"},
+            "rejected_parameter_points": {"type": "integer"},
+            "binding_accepted_tolerance": {"$ref": "#/$defs/nullableNumber"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

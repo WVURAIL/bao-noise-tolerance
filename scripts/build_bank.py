@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 
 from baonoise.fisherbank import build_bank
+from baonoise.residual_templates import (FAMILIES, make_template,
+                                         parse_parameter_assignments)
 from baonoise.resources import BANK_NAMES
 
 if __name__ == "__main__":
@@ -38,20 +40,33 @@ if __name__ == "__main__":
                          "200 ns). Modeled on BOTH sides: the forecast loses "
                          "the cut modes and the residual chain claims the "
                          "matching suppression.")
-    ap.add_argument("--p-res", type=float, default=None, metavar="AMPLITUDE",
+    residual = ap.add_mutually_exclusive_group()
+    residual.add_argument("--p-res", type=float, default=None,
+                    metavar="AMPLITUDE",
                     help="add a residual-contamination template at this "
                          "multiple of the noise power, carried as a '_Pres' "
                          "row in the Fisher matrix. Use 1.0: the bias is "
                          "linear in the amplitude, so one build serves every "
                          "r, and scripts/bias_tolerance.py assumes unit "
                          "normalization.")
+    residual.add_argument(
+        "--residual-template", choices=FAMILIES,
+        help="named unit-amplitude analytic P_res family; unlike an empirical "
+             "visibility template, these use only the (k,u,P_N,P_signal) "
+             "coordinates available to RadioFisher")
+    ap.add_argument(
+        "--template-param", action="append", default=[], metavar="NAME=VALUE",
+        help="override one named analytic-template parameter; repeat as needed")
     args = ap.parse_args()
 
     ctag = (f"_{args.cosmology}" if args.cosmology
             and args.cosmology != "planck2018" else "")
     # A P_res bank carries an extra parameter row and is not interchangeable
     # with a plain one, so it never lands on the plain default name.
-    ptag = "_pres" if args.p_res is not None else ""
+    if args.residual_template is not None:
+        ptag = f"_pres_{args.residual_template}"
+    else:
+        ptag = "_pres" if args.p_res is not None else ""
     if args.kfg_fac is not None:
         ptag += f"_kfg{args.kfg_fac:g}"
     ktag = "_dense" if args.dense_knee else ""
@@ -78,11 +93,22 @@ if __name__ == "__main__":
     overrides = {}
     if args.p_res is not None:
         overrides["P_res"] = args.p_res
+    if args.residual_template is not None:
+        try:
+            template_parameters = parse_parameter_assignments(
+                args.template_param)
+            overrides["P_res"] = make_template(
+                args.residual_template, template_parameters)
+        except (TypeError, ValueError) as exc:
+            ap.error(str(exc))
+    elif args.template_param:
+        ap.error("--template-param requires --residual-template")
     if args.kfg_fac is not None:
         overrides["kfg_fac"] = args.kfg_fac
     overrides = overrides or None
     print(f"[bank] {len(tgrid)} time points, {tgrid[0]:.3g}-{tgrid[-1]:.3g} hr"
-          + (f", P_res={args.p_res}" if overrides else ""))
+          + (f", P_res={overrides.get('P_res')}"
+             if overrides and "P_res" in overrides else ""))
     build_bank(out, t_grid_hours=tgrid, nproc=args.nproc,
                epsilon_fg=args.epsilon_fg, config=args.config,
                cosmology=args.cosmology, expt_overrides=overrides)

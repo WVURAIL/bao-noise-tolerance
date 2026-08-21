@@ -288,10 +288,40 @@ python scripts/plot_convergence.py --out out/
 python scripts/three_worlds.py
 ```
 
+The combined multi-redshift estimator, stationary finite-correlation
+noise-normalized family, non-averaging fixed-physical limit, named
+analytic residual shapes, complete refusal ledger, and explicitly versioned
+JSON opt-in are documented in
+[the model-only forecast completion contract](docs/forecast-completion.md).
+That contract now includes actual all-seven-DTV-bin executions for the scalar
+noise-shaped response and the authenticated `low_kparallel`, `wedge_like`,
+and `k_shell_localized` families. Rebuild the compact bin comparison,
+conservative ATSC-channel map, execution/refusal register, LaTeX summary, and
+PNG/PDF dissertation figure with:
+
+```bash
+PYTHONPATH=src python3 scripts/forecast_template_comparison.py \
+  --evidence noise_shaped=out/forecast_completion_all_dtv_bins.json \
+  --evidence low_kparallel=out/forecast_completion_all_dtv_bins_low_kparallel.json \
+  --evidence wedge_like=out/forecast_completion_all_dtv_bins_wedge_like.json \
+  --evidence k_shell_localized=out/forecast_completion_all_dtv_bins_k_shell_localized.json
+PYTHONPATH=src python3 scripts/render_forecast_template_assets.py
+```
+
+The three empirical visibility families--frequency-localized,
+baseline-localized, and sidereal-coherent--remain explicit
+`data_dependent_incomplete` refusals. The model-only grid does not invent the
+missing telescope coordinates or select one analytic shape as the measured
+channel policy.
+
 Each script checks the artifact kind, cosmology, astrophysical profile,
 unit-response normalization, and (where applicable) `kfg_fac` before reading
-Fisher matrices. Missing or incompatible banks fail with the exact rebuild
-command. The historical `bias_tolerance*.json` and `three_worlds.csv` outputs
+Fisher matrices. Bias evaluation additionally recomputes the Bao and
+RadioFisher scientific-source hashes and reconstructs the cosmology, P(k)
+cache, experiment, baseline, overrides, and foreground settings. A mismatch
+fails closed with the exact rebuild command; `kfg_fac=null` and `kfg_fac=80`
+remain distinct provenance states. The historical `bias_tolerance*.json` and
+`three_worlds.csv` outputs
 made from absent pre-1.0 banks are not distributed; regenerate them only from
 the locally built prerequisites above.
 
@@ -461,12 +491,19 @@ variation) understates the filter by ~7 dB and then double-counts that same
 power in the coherence term.
 
 Coherence is what remains. Thermal noise averages down; a residual only
-averages down over its own correlation time τ_c, so a component is amplified by
-`n_coh` = τ_c / T_frame relative to thermal, and, usefully, that amplification
-is *independent of total integration time*, so the residual saturates rather
-than growing without bound. τ_c is capped at one sidereal day by construction
-(anything slower is already gone as m = 0), and the two surviving populations
-carry their own coherence rather than one lumped factor.
+averages down over its own correlation time τ_c, so the scalar chain carries the
+factor `n_coh` = τ_c / T_frame. That coherence factor is independent of total
+integration time, but the residual-to-thermal ratio is not automatically so.
+The legacy convergence calculation holds that ratio fixed at every time (the
+stationary, finite-correlation-time limit in which residual power averages
+down with thermal power). A fixed physical residual is the non-averaging,
+persistent limit and instead grows relative to the falling thermal power as
+`t/t_ref`. The two conventions are now separately named, evaluated, and
+recorded by `scripts/bias_tolerance.py`;
+see [the model-only forecast completion contract](docs/forecast-completion.md).
+τ_c is capped at one sidereal day by construction (anything slower is already
+gone as m = 0), and the two surviving populations carry their own coherence
+rather than one lumped factor.
 
 ### Measuring τ_c, or declining to
 
