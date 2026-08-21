@@ -4,11 +4,13 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 
 import pytest
 
 
+SUBSET_TAG = re.compile(r"^[A-Z]{6}\+")
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
     "baonoise_test_render_forecast_template_assets",
@@ -48,7 +50,8 @@ def test_renderer_exports_figure_table_and_complete_caption(tmp_path):
     assert "Cmr10" not in fonts
     font_rows = [line.split() for line in fonts.splitlines()[2:] if line.strip()]
     assert font_rows
-    assert all(row[0].startswith("LM") and row[1:3] == ["Type", "1"]
+    assert all(SUBSET_TAG.sub("", row[0]).startswith("LM")
+               and row[1:3] == ["Type", "1"]
                and row[4] == "yes" for row in font_rows)
     info = subprocess.run(
         ["pdfinfo", str(figure.with_suffix(".pdf"))], check=True,
@@ -95,7 +98,7 @@ def test_renderer_exports_figure_table_and_complete_caption(tmp_path):
     assert all(name.startswith("LM")
                for name in release["figure_rendering"]["font_names"])
     assert release["figure_rendering"]["font_names"] \
-        == sorted({row[0] for row in font_rows})
+        == sorted({SUBSET_TAG.sub("", row[0]) for row in font_rows})
     jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads(renderer.MANIFEST_SCHEMA_PATH.read_text(
         encoding="utf-8"))

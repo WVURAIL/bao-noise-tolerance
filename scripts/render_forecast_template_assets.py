@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -72,6 +73,13 @@ def _dissertation_style():
     return module
 
 
+# pdffonts reports subsetted fonts with a six-letter tag and "+" prepended
+# to the base name (e.g. "BPQUAK+LMRoman10-Regular"). The tag is assigned
+# per render and varies between runs, so strip it before checking the
+# Latin Modern contract and before recording names in the manifest.
+_SUBSET_TAG = re.compile(r"^[A-Z]{6}\+")
+
+
 def _verify_pdf_contract(path: Path) -> dict:
     """Fail closed on fonts or metadata rejected by the dissertation audit."""
     tools = {name: shutil.which(name) for name in ("pdffonts", "pdfinfo")}
@@ -92,15 +100,16 @@ def _verify_pdf_contract(path: Path) -> dict:
         if len(columns) < 8:
             raise RuntimeError(f"cannot parse pdffonts row: {line}")
         name = columns[0]
+        base_name = _SUBSET_TAG.sub("", name)
         font_type = " ".join(columns[1:3])
         embedded = columns[4]
         if font_type != "Type 1" or embedded != "yes" \
-                or not name.startswith("LM"):
+                or not base_name.startswith("LM"):
             raise RuntimeError(
                 "PDF font contract requires embedded Type 1 Latin Modern; "
                 f"found {name} ({font_type}, embedded={embedded})")
         audited_fonts.append({
-            "name": name, "type": font_type, "embedded": True})
+            "name": base_name, "type": font_type, "embedded": True})
     info = subprocess.run(
         [tools["pdfinfo"], str(path)], check=True, capture_output=True,
         text=True).stdout
