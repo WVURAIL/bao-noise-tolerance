@@ -269,6 +269,39 @@ channel masks or choose an excision policy. Its machine-readable contract is
 `docs/forecast-completion-evidence.schema.json`; the output records that
 schema document's SHA-256 alongside the evaluator and builder-wrapper hashes.
 
+At the one-on-sky-year reference time the two amplitude families coincide.
+The all-bin export gives the following central combined-estimator tolerances;
+each value is the allowed residual amplitude in the declared residual-to-noise
+normalization, not the target parameter's error unit. A dagger marks a value
+that is retained for diagnosis but must not be propagated because its
+plus/minus-10-percent bank-native tolerance drift exceeded the 1.2 gate.
+
+| bank bin | redshift range | `DV` tolerance | `F` tolerance | `fs8` tolerance |
+|---:|:---:|---:|---:|---:|
+| 5 | 1.30--1.40 | 0.04120† | 0.06112† | 0.001620 |
+| 6 | 1.40--1.50 | 0.01601 | 0.01913 | 0.001687 |
+| 7 | 1.50--1.60 | 0.02347† | 0.03292† | 0.001810 |
+| 8 | 1.60--1.70 | 0.02252† | 0.01837† | 0.001985 |
+| 9 | 1.70--1.80 | 0.01158 | 0.01098 | 0.002149 |
+| 10 | 1.80--1.90 | 0.01535 | 0.01540 | 0.002359 |
+| 11 | 1.90--2.04 | 0.09236† | 0.10247† | 0.002178 |
+
+Across all seven bins, three times, and three targets, each combined time
+family accepts 42 of 63 requested points and retains 21 refusals. Every refusal
+is `tolerance_drift_exceeds_limit`; none is a missing target, time-grid
+extrapolation, sign change, null-space overlap, or failed inversion. Bins 6, 9,
+and 10 accept all nine points. The evidence runner also passes 1,701 explicit
+cross-family response/tolerance checks covering all 189
+bin/time/target/perturbation combinations.
+
+These results do not change the existing channel-masking or excision-policy
+conclusions: the response-bank calculation consumes no new masks or pilot
+visibilities, and the re-stamped forecast banks continue to pass the published
+number gates. It adds a separate coherent-residual admissibility constraint
+for later channel-policy propagation. Only accepted points may be used for
+that propagation; the retained rejected values identify where a denser or
+better-conditioned model study is required before making a policy claim.
+
 ## JSON contract
 
 For backward compatibility, `--json-format legacy` remains the default. It
