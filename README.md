@@ -288,6 +288,11 @@ python scripts/plot_convergence.py --out out/
 python scripts/three_worlds.py
 ```
 
+The combined multi-redshift estimator, fixed-physical time family, named
+analytic residual shapes, complete refusal ledger, and explicitly versioned
+JSON opt-in are documented in
+[the model-only forecast completion contract](docs/forecast-completion.md).
+
 Each script checks the artifact kind, cosmology, astrophysical profile,
 unit-response normalization, and (where applicable) `kfg_fac` before reading
 Fisher matrices. Missing or incompatible banks fail with the exact rebuild
@@ -461,12 +466,17 @@ variation) understates the filter by ~7 dB and then double-counts that same
 power in the coherence term.
 
 Coherence is what remains. Thermal noise averages down; a residual only
-averages down over its own correlation time τ_c, so a component is amplified by
-`n_coh` = τ_c / T_frame relative to thermal, and, usefully, that amplification
-is *independent of total integration time*, so the residual saturates rather
-than growing without bound. τ_c is capped at one sidereal day by construction
-(anything slower is already gone as m = 0), and the two surviving populations
-carry their own coherence rather than one lumped factor.
+averages down over its own correlation time τ_c, so the scalar chain carries the
+factor `n_coh` = τ_c / T_frame. That coherence factor is independent of total
+integration time, but the residual-to-thermal ratio is not automatically so.
+The legacy convergence calculation holds that ratio fixed at every time (a
+noise-normalized template family). A fixed physical residual instead grows
+relative to the falling thermal power as `t/t_ref`. The two conventions are
+now separately named, evaluated, and recorded by `scripts/bias_tolerance.py`;
+see [the model-only forecast completion contract](docs/forecast-completion.md).
+τ_c is capped at one sidereal day by construction (anything slower is already
+gone as m = 0), and the two surviving populations carry their own coherence
+rather than one lumped factor.
 
 ### Measuring τ_c, or declining to
 

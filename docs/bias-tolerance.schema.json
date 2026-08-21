@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:baonoise:schema:bias-tolerance:v1",
+  "title": "baonoise coherent-residual bias-tolerance report",
+  "type": "object",
+  "required": [
+    "schema",
+    "schema_version",
+    "generated_utc",
+    "bank",
+    "estimator",
+    "residual_amplitude",
+    "request",
+    "bins"
+  ],
+  "properties": {
+    "schema": {"const": "baonoise-bias-tolerance-v1"},
+    "schema_version": {"const": 1},
+    "generated_utc": {"type": "string", "format": "date-time"},
+    "bank": {
+      "type": "object",
+      "required": [
+        "path", "filename", "sha256", "schema_version", "artifact_kind",
+        "config", "cosmology", "astrophysical_model_profile", "P_res",
+        "built_utc", "baonoise_working_tree_sha256",
+        "radiofisher_working_tree_sha256"
+      ],
+      "properties": {
+        "path": {"type": "string"},
+        "filename": {"type": "string"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "schema_version": {"type": "integer"},
+        "artifact_kind": {"const": "bias_response"},
+        "config": {"type": "string"},
+        "cosmology": {"type": "string"},
+        "astrophysical_model_profile": {"type": "string"},
+        "P_res": {},
+        "built_utc": {"type": "string", "format": "date-time"},
+        "baonoise_working_tree_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "radiofisher_working_tree_sha256": {"$ref": "#/$defs/nullableSha256"}
+      },
+      "additionalProperties": false
+    },
+    "estimator": {
+      "type": "object",
+      "required": ["name", "scope"],
+      "properties": {
+        "name": {
+          "enum": ["perbin_appendix_a", "overview_combined_multibin"]
+        },
+        "scope": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "residual_amplitude": {
+      "type": "object",
+      "required": [
+        "time_scaling", "reported_amplitude_unit", "reference_hours",
+        "reference_years", "thermal_power_scaling_assumption",
+        "bank_response_definition", "reported_amplitude_application"
+      ],
+      "properties": {
+        "time_scaling": {
+          "enum": [
+            "noise_normalized_at_each_time",
+            "fixed_physical_at_reference_time"
+          ]
+        },
+        "reported_amplitude_unit": {"type": "string"},
+        "reference_hours": {"$ref": "#/$defs/nullableNumber"},
+        "reference_years": {"$ref": "#/$defs/nullableNumber"},
+        "thermal_power_scaling_assumption": {"type": "string"},
+        "bank_response_definition": {"type": "string"},
+        "reported_amplitude_application": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "zeta", "years", "parameters", "bin_indices",
+        "stability_fraction", "maximum_tolerance_drift_ratio"
+      ],
+      "properties": {
+        "zeta": {"type": "number", "exclusiveMinimum": 0},
+        "years": {"type": "array", "items": {"type": "number"}},
+        "parameters": {"type": "array", "items": {"type": "string"}},
+        "bin_indices": {"type": "array", "items": {"type": "integer"}},
+        "stability_fraction": {"type": "number"},
+        "maximum_tolerance_drift_ratio": {"type": "number"}
+      },
+      "additionalProperties": false
+    },
+    "bins": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/bin"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nullableSha256": {
+      "oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]
+    },
+    "nullableNumber": {"type": ["number", "null"]},
+    "evaluation": {
+      "type": "object",
+      "required": [
+        "label", "scale", "t_hours", "target_name", "response_name",
+        "sigma", "dtheta_d_current_noise_ratio", "time_scaling_multiplier",
+        "dtheta_d_reported_amplitude", "r_tolerance_current_noise_ratio",
+        "r_tolerance", "condition_number", "minimum_eigenvalue",
+        "maximum_eigenvalue", "eigenvalue_cutoff", "discarded_eigenmodes",
+        "valid", "failure_reason"
+      ],
+      "properties": {
+        "label": {"enum": ["lower", "central", "upper"]},
+        "scale": {"type": "number"},
+        "t_hours": {"type": "number"},
+        "target_name": {"type": ["string", "null"]},
+        "response_name": {"type": "string"},
+        "sigma": {"$ref": "#/$defs/nullableNumber"},
+        "dtheta_d_current_noise_ratio": {"$ref": "#/$defs/nullableNumber"},
+        "time_scaling_multiplier": {"type": "number"},
+        "dtheta_d_reported_amplitude": {"$ref": "#/$defs/nullableNumber"},
+        "r_tolerance_current_noise_ratio": {"$ref": "#/$defs/nullableNumber"},
+        "r_tolerance": {"$ref": "#/$defs/nullableNumber"},
+        "condition_number": {"$ref": "#/$defs/nullableNumber"},
+        "minimum_eigenvalue": {"$ref": "#/$defs/nullableNumber"},
+        "maximum_eigenvalue": {"$ref": "#/$defs/nullableNumber"},
+        "eigenvalue_cutoff": {"$ref": "#/$defs/nullableNumber"},
+        "discarded_eigenmodes": {"type": ["integer", "null"]},
+        "valid": {"type": "boolean"},
+        "failure_reason": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "parameterPoint": {
+      "type": "object",
+      "required": [
+        "parameter", "target_name", "t_hours", "central", "stability",
+        "perturbations", "accepted", "rejection_reasons"
+      ],
+      "properties": {
+        "parameter": {"type": "string"},
+        "target_name": {"type": ["string", "null"]},
+        "t_hours": {"type": "number"},
+        "central": {"$ref": "#/$defs/evaluation"},
+        "stability": {
+          "type": "object",
+          "required": [
+            "fractional_time_perturbation",
+            "maximum_allowed_tolerance_ratio",
+            "gate_quantity",
+            "observed_tolerance_ratio",
+            "observed_reported_amplitude_tolerance_ratio",
+            "bias_response_sign_count"
+          ],
+          "properties": {
+            "fractional_time_perturbation": {"type": "number"},
+            "maximum_allowed_tolerance_ratio": {"type": "number"},
+            "gate_quantity": {
+              "const": "r_tolerance_current_noise_ratio"
+            },
+            "observed_tolerance_ratio": {
+              "$ref": "#/$defs/nullableNumber"
+            },
+            "observed_reported_amplitude_tolerance_ratio": {
+              "$ref": "#/$defs/nullableNumber"
+            },
+            "bias_response_sign_count": {"type": ["integer", "null"]}
+          },
+          "additionalProperties": false
+        },
+        "perturbations": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"$ref": "#/$defs/evaluation"}
+        },
+        "accepted": {"type": "boolean"},
+        "rejection_reasons": {
+          "type": "array", "items": {"type": "string"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "bin": {
+      "type": "object",
+      "required": [
+        "bin_index", "z_low", "z_center", "z_high", "points", "summary"
+      ],
+      "properties": {
+        "bin_index": {"type": "integer"},
+        "z_low": {"type": "number"},
+        "z_center": {"type": "number"},
+        "z_high": {"type": "number"},
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["years", "t_hours", "parameters"],
+            "properties": {
+              "years": {"type": "number"},
+              "t_hours": {"type": "number"},
+              "parameters": {
+                "type": "object",
+                "additionalProperties": {"$ref": "#/$defs/parameterPoint"}
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "summary": {
+          "type": "object",
+          "required": [
+            "requested_parameter_points", "accepted_parameter_points",
+            "rejected_parameter_points", "binding_accepted_tolerance"
+          ],
+          "properties": {
+            "requested_parameter_points": {"type": "integer"},
+            "accepted_parameter_points": {"type": "integer"},
+            "rejected_parameter_points": {"type": "integer"},
+            "binding_accepted_tolerance": {"$ref": "#/$defs/nullableNumber"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

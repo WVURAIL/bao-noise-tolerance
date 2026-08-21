@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Why more integration does not rescue a contaminated channel.
+"""Noise-normalized convergence for the legacy screening family.
 
-The intuition everyone reaches for is that a systematic sits at a fixed level
-while the statistical error falls, so the two cross and the systematic takes
-over. That is not what happens here, and the real answer is worse.
+This figure deliberately evaluates ``noise_normalized_at_each_time``: the
+residual template is re-normalized to the contemporaneous thermal-noise power
+at every plotted time. It does not describe a fixed physical contaminant.
 
 Both fall. In the noise-dominated regime the Fisher information grows as t^2,
 so sigma(fs8) falls roughly as 1/t, and the bias a residual induces falls at
@@ -11,10 +11,12 @@ essentially the same rate, because it is built from the same integrals. Over
 the survey's entire realistic range the ratio |Delta fs8| / sigma(fs8) moves by
 a few percent. Integration shrinks the error bar and the bias in lockstep.
 
-So the answer is not "eventually the systematic wins." It is that the answer
-is the same number of sigma wrong on day one and after ten years, and it looks
-more converged the whole way. That is what the second panel shows: flat lines
-where a reader expects descending ones.
+Within that declared family the answer is nearly the same number of sigma wrong
+on day one and after ten years. A fixed physical/reference-time family instead
+includes the deterministic t/t_ref response scaling and is available through
+``scripts/bias_tolerance.py --time-scaling
+fixed_physical_at_reference_time --reference-years ...``. The two hypotheses
+coincide only at the reference time.
 
 The bias-response bank is not shipped. Build it explicitly first:
 
@@ -121,6 +123,8 @@ def main(argv=None):
     ap.add_argument("--out", type=Path, default=Path("out"))
     args = ap.parse_args(argv)
     bt = load_bias_tools()
+    print(f"time_scaling={bt.NOISE_NORMALIZED_AT_EACH_TIME}  "
+          "(this figure intentionally does not hold physical power fixed)")
     try:
         bank = bt.load_bias_bank(args.bank, expected_kfg_fac=None)
     except ValueError as exc:
