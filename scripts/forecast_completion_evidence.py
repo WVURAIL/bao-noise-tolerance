@@ -50,6 +50,14 @@ def _ledger(report: dict) -> dict:
     }
 
 
+def _portable_bank_report(report_bank: dict) -> dict:
+    """Retain exact run/scientific identities while omitting absolute paths."""
+    portable = json.loads(json.dumps(
+        report_bank, sort_keys=True, allow_nan=False))
+    portable.pop("path", None)
+    return portable
+
+
 EVIDENCE_SCHEMA = "baonoise-forecast-completion-evidence-v2"
 EVIDENCE_SCHEMA_PATH = (
     Path(__file__).resolve().parents[1]
@@ -247,8 +255,7 @@ def main(argv=None) -> int:
             ("combined_fixed_physical", combined_fixed),
         )
     }
-    bank_report = dict(perbin_noise["bank"])
-    bank_report.pop("path", None)
+    bank_report = _portable_bank_report(perbin_noise["bank"])
     bank_report["numerical_grid_sha256"] = _grid_sha256(bank)
 
     payload = {
@@ -263,6 +270,14 @@ def main(argv=None) -> int:
             "report_schema": bt.REPORT_SCHEMA,
         },
         "bank": bank_report,
+        "reproducibility": {
+            "exact_execution_bank_sha256_retained": True,
+            "scientific_content_reproducible": True,
+            "archive_bytes_reproducible": False,
+            "archive_variability_sources": [
+                "bank build timestamp", "NPZ ZIP member timestamps"],
+            "absolute_checkout_paths_omitted": True,
+        },
         "evidence_scope": {
             "bin_indices": bins,
             "bin_count": len(bins),

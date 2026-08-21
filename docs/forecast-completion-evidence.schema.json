@@ -4,8 +4,8 @@
   "title": "baonoise model-only forecast-completion evidence",
   "type": "object",
   "required": [
-    "schema", "schema_version", "implementation", "bank", "evidence_scope",
-    "checks", "ledgers"
+    "schema", "schema_version", "implementation", "bank",
+    "reproducibility", "evidence_scope", "checks", "ledgers"
   ],
   "properties": {
     "schema": {"const": "baonoise-forecast-completion-evidence-v2"},
@@ -53,6 +53,24 @@
         "scientific_identity": {"type": "object"}
       },
       "not": {"required": ["path"]},
+      "additionalProperties": false
+    },
+    "reproducibility": {
+      "type": "object",
+      "required": [
+        "exact_execution_bank_sha256_retained",
+        "scientific_content_reproducible", "archive_bytes_reproducible",
+        "archive_variability_sources", "absolute_checkout_paths_omitted"
+      ],
+      "properties": {
+        "exact_execution_bank_sha256_retained": {"const": true},
+        "scientific_content_reproducible": {"const": true},
+        "archive_bytes_reproducible": {"const": false},
+        "archive_variability_sources": {
+          "const": ["bank build timestamp", "NPZ ZIP member timestamps"]
+        },
+        "absolute_checkout_paths_omitted": {"const": true}
+      },
       "additionalProperties": false
     },
     "evidence_scope": {

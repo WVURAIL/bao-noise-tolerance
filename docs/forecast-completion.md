@@ -239,6 +239,17 @@ intentionally outside the bank's authenticated scientific-source manifest. It
 contains no absolute checkout path. It does not read pilot data and is not
 evidence for an empirical visibility residual shape.
 
+The evidence envelope omits absolute bank/checkout paths but retains both the
+exact response-bank archive SHA-256 and the canonical Fisher-grid digest. It
+also retains clean Bao and RadioFisher commit IDs, source-content digests,
+source manifests, package/backend versions, the bank build timestamp, and all
+cosmology/cache/experiment/baseline digests, overrides, and foreground
+settings. The numerical and scientific content is reproducible. The NPZ
+archive bytes are explicitly marked non-reproducible because the bank build
+timestamp and ZIP-member timestamps vary between otherwise identical builds;
+the committed SHA identifies the exact execution artifact rather than making a
+false byte-for-byte regeneration claim.
+
 An all-DTV-bin export uses the same three-point bank and includes every one of
 the seven redshift bins that overlaps the physical 470--608 MHz DTV band:
 
