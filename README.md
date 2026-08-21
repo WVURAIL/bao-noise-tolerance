@@ -288,15 +288,20 @@ python scripts/plot_convergence.py --out out/
 python scripts/three_worlds.py
 ```
 
-The combined multi-redshift estimator, fixed-physical time family, named
+The combined multi-redshift estimator, stationary finite-correlation
+noise-normalized family, non-averaging fixed-physical limit, named
 analytic residual shapes, complete refusal ledger, and explicitly versioned
 JSON opt-in are documented in
 [the model-only forecast completion contract](docs/forecast-completion.md).
 
 Each script checks the artifact kind, cosmology, astrophysical profile,
 unit-response normalization, and (where applicable) `kfg_fac` before reading
-Fisher matrices. Missing or incompatible banks fail with the exact rebuild
-command. The historical `bias_tolerance*.json` and `three_worlds.csv` outputs
+Fisher matrices. Bias evaluation additionally recomputes the Bao and
+RadioFisher scientific-source hashes and reconstructs the cosmology, P(k)
+cache, experiment, baseline, overrides, and foreground settings. A mismatch
+fails closed with the exact rebuild command; `kfg_fac=null` and `kfg_fac=80`
+remain distinct provenance states. The historical `bias_tolerance*.json` and
+`three_worlds.csv` outputs
 made from absent pre-1.0 banks are not distributed; regenerate them only from
 the locally built prerequisites above.
 
@@ -469,10 +474,12 @@ Coherence is what remains. Thermal noise averages down; a residual only
 averages down over its own correlation time τ_c, so the scalar chain carries the
 factor `n_coh` = τ_c / T_frame. That coherence factor is independent of total
 integration time, but the residual-to-thermal ratio is not automatically so.
-The legacy convergence calculation holds that ratio fixed at every time (a
-noise-normalized template family). A fixed physical residual instead grows
-relative to the falling thermal power as `t/t_ref`. The two conventions are
-now separately named, evaluated, and recorded by `scripts/bias_tolerance.py`;
+The legacy convergence calculation holds that ratio fixed at every time (the
+stationary, finite-correlation-time limit in which residual power averages
+down with thermal power). A fixed physical residual is the non-averaging,
+persistent limit and instead grows relative to the falling thermal power as
+`t/t_ref`. The two conventions are now separately named, evaluated, and
+recorded by `scripts/bias_tolerance.py`;
 see [the model-only forecast completion contract](docs/forecast-completion.md).
 τ_c is capped at one sidereal day by construction (anything slower is already
 gone as m = 0), and the two surviving populations carry their own coherence

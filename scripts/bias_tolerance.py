@@ -19,13 +19,15 @@ noise at the time at which each Fisher point is evaluated. That bank supports
 two different, explicitly named time families:
 
 ``noise_normalized_at_each_time``
-    One unit always means the contemporaneous thermal-noise power.
+    One unit always means the contemporaneous thermal-noise power: the
+    stationary finite-correlation limit in which residual and thermal power
+    both average down.
 
 ``fixed_physical_at_reference_time``
     One unit means the thermal-noise power at a declared reference time. As
     thermal power scales as 1/t, the bank response at time t is multiplied by
-    t/t_ref. The two families are identical at t_ref and are not interchangeable
-    away from it.
+    t/t_ref. This is the non-averaging persistent-residual limit. The two
+    families are identical at t_ref and are not interchangeable away from it.
 
 Bias-response banks are intentionally not distributed. Build one and run:
 
@@ -52,9 +54,17 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from baonoise import channels, survey
+from baonoise import __version__, channels, cosmologies, pkcache, survey
+from baonoise.compat import (import_radiofisher,
+                             require_backend_capabilities)
 from baonoise.constants import HI_REST_FREQUENCY_MHZ
-from baonoise.fisherbank import ARTIFACT_BIAS_RESPONSE, FisherBank
+from baonoise.fisherbank import (
+    ARTIFACT_BIAS_RESPONSE, BAONOISE_SOURCE_MANIFEST, FOREGROUND_KEYS,
+    RADIOFISHER_SOURCE_MANIFEST, FisherBank, _git_state,
+    experiment_settings_payload,
+)
+from baonoise.residual_templates import validate_template_metadata
+from baonoise.resources import filesystem_data_file
 
 PRES = "_Pres"
 DEFAULT_BIAS_BANK = ROOT / "data" / "fisher_bank_chime2022_pres_dense.npz"
@@ -109,16 +119,181 @@ def _is_unit_response(value) -> bool:
     """Whether metadata describes a unit thermal-normalized response."""
     if _exact_numeric(value, 1.0):
         return True
-    return (
-        isinstance(value, dict)
-        and _exact_numeric(value.get("amplitude"), 1.0)
-        and value.get("normalization") == "thermal_noise_at_evaluation_time"
-        and isinstance(value.get("family"), str)
-    )
+    if not isinstance(value, dict):
+        return False
+    try:
+        validate_template_metadata(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _sha256_json(value) -> str:
+    payload = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _canonical_manifest(manifest: dict) -> dict:
+    return {
+        "include": list(manifest["include"]),
+        "exclude": list(manifest["exclude"]),
+    }
+
+
+def _bank_build_identity(bank) -> dict:
+    """Canonical build-time identity with bank-level settings attached."""
+    identity = json.loads(json.dumps(
+        bank.meta["provenance"], sort_keys=True, allow_nan=False))
+    for name in ("expt_overrides", "foreground_settings"):
+        settings = json.loads(json.dumps(
+            bank.meta[name], sort_keys=True, allow_nan=False))
+        identity[name] = {
+            "sha256": _sha256_json(settings),
+            "settings": settings,
+        }
+    return identity
+
+
+def _evaluation_identity(bank, *, rf_dir=None) -> tuple[dict, dict]:
+    """Reconstruct and authenticate every scientific input used at runtime."""
+    build = bank.meta["provenance"]
+    expected_bao_manifest = _canonical_manifest(BAONOISE_SOURCE_MANIFEST)
+    expected_rf_manifest = _canonical_manifest(RADIOFISHER_SOURCE_MANIFEST)
+    if build["baonoise"]["source_manifest"] != expected_bao_manifest:
+        raise ValueError(
+            "bank-build Bao scientific-source manifest differs from the "
+            "evaluator's canonical manifest")
+    if build["radiofisher"]["source_manifest"] != expected_rf_manifest:
+        raise ValueError(
+            "bank-build RadioFisher scientific-source manifest differs from "
+            "the evaluator's canonical manifest")
+
+    rf, resolved_rf_dir = import_radiofisher(rf_dir)
+    capabilities = require_backend_capabilities(
+        rf, build["radiofisher"]["capabilities"], rf_dir=resolved_rf_dir)
+    bao_state = _git_state(ROOT, **BAONOISE_SOURCE_MANIFEST)
+    rf_state = _git_state(resolved_rf_dir, **RADIOFISHER_SOURCE_MANIFEST)
+    evaluation_bao = {
+        "version": __version__,
+        "source_manifest": expected_bao_manifest,
+        **bao_state,
+    }
+    evaluation_rf = {
+        "backend_id": getattr(rf, "BACKEND_ID", None),
+        "backend_version": getattr(rf, "BACKEND_VERSION", None),
+        "api_version": getattr(rf, "BACKEND_API_VERSION", None),
+        "capabilities": sorted(capabilities),
+        "source_manifest": expected_rf_manifest,
+        **rf_state,
+    }
+
+    cache_name = build["pk_cache"]["filename"]
+    cachefile = filesystem_data_file(cache_name)
+    cache_meta = pkcache.inspect_pk_cache(cachefile)
+    evaluation_cache = {
+        "filename": cache_name,
+        "sha256": pkcache.file_sha256(cachefile),
+        "cache_id": _sha256_json(cache_meta),
+    }
+    resolved_cosmo = cosmologies.get(
+        bank.meta["cosmology"], rf, resolved_rf_dir)
+    evaluation_cosmology = {
+        "name": bank.meta["cosmology"],
+        "sha256": pkcache.cosmology_fingerprint(resolved_cosmo),
+        "parameters": pkcache.cosmology_payload(resolved_cosmo),
+        "astrophysical_model_profile":
+            resolved_cosmo[cosmologies.ASTROPHYSICAL_PROFILE_KEY],
+        "astrophysical_models": {
+            key: resolved_cosmo[key] for key in
+            ("Tb_model", "bias_HI_model", "omega_HI_model")},
+    }
+    if not pkcache.cache_matches(cachefile, resolved_cosmo):
+        raise ValueError(
+            "evaluation P(k) cache does not match the bank's resolved "
+            "cosmology and canonical cache settings")
+    cosmo = pkcache.load_fiducial_cosmology(
+        rf, cachefile, cosmo=resolved_cosmo)
+
+    experiment = survey.experiment_from_bank_metadata(
+        rf, resolved_rf_dir, bank.meta, ttot_hours=1.0)
+    experiment_payload = experiment_settings_payload(
+        experiment, resolved_rf_dir)
+    baseline = experiment.get("n(x)")
+    baseline_path = Path(baseline) if baseline is not None else None
+    evaluation_experiment = {
+        "sha256": _sha256_json(experiment_payload),
+        "settings": experiment_payload,
+        "baseline_sha256": (
+            pkcache.file_sha256(baseline_path)
+            if baseline_path is not None and baseline_path.is_file() else None),
+    }
+    evaluation_foregrounds = {
+        key: experiment_payload.get(key) for key in FOREGROUND_KEYS}
+    evaluation_overrides = json.loads(json.dumps(
+        bank.meta["expt_overrides"], sort_keys=True, allow_nan=False))
+
+    evaluation = {
+        "baonoise": evaluation_bao,
+        "radiofisher": evaluation_rf,
+        "cosmology": evaluation_cosmology,
+        "pk_cache": evaluation_cache,
+        "experiment": evaluation_experiment,
+        "expt_overrides": {
+            "sha256": _sha256_json(evaluation_overrides),
+            "settings": evaluation_overrides,
+        },
+        "foreground_settings": {
+            "sha256": _sha256_json(evaluation_foregrounds),
+            "settings": evaluation_foregrounds,
+        },
+    }
+    mismatches = []
+    for section in ("baonoise", "radiofisher"):
+        recorded = build[section]["working_tree_sha256"]
+        current = evaluation[section]["working_tree_sha256"]
+        if recorded is None or current is None or recorded != current:
+            mismatches.append(
+                f"{section}.working_tree_sha256 build={recorded!r} "
+                f"evaluation={current!r}")
+    for field in ("version",):
+        if build["baonoise"][field] != evaluation_bao[field]:
+            mismatches.append(
+                f"baonoise.{field} build={build['baonoise'][field]!r} "
+                f"evaluation={evaluation_bao[field]!r}")
+    for field in ("backend_id", "backend_version", "api_version",
+                  "capabilities"):
+        if build["radiofisher"][field] != evaluation_rf[field]:
+            mismatches.append(
+                f"radiofisher.{field} build="
+                f"{build['radiofisher'][field]!r} "
+                f"evaluation={evaluation_rf[field]!r}")
+    for section in ("cosmology", "pk_cache", "experiment"):
+        if build[section] != evaluation[section]:
+            mismatches.append(f"{section} build/evaluation identity differs")
+    if bank.meta.get("foreground_settings") != evaluation_foregrounds:
+        mismatches.append(
+            "foreground_settings build/evaluation identity differs")
+    if bank.meta.get("expt_overrides") != evaluation_overrides:
+        mismatches.append(
+            "expt_overrides build/evaluation identity differs")
+    if mismatches:
+        raise ValueError(
+            "scientific evaluation identity does not match the response-bank "
+            "build: " + "; ".join(mismatches))
+
+    context = {
+        "rf": rf,
+        "rf_dir": resolved_rf_dir,
+        "cosmo": cosmo,
+        "cosmo_fns": rf.background_evolution_splines(cosmo),
+        "cachefile": cachefile,
+    }
+    return evaluation, context
 
 
 def load_bias_bank(path, *, build_command=DEFAULT_BUILD_COMMAND,
-                   expected_kfg_fac=_ANY_KFG):
+                   expected_kfg_fac=_ANY_KFG, rf_dir=None):
     """Load an explicitly generated strict-v2 unit-response bank."""
     path = Path(path)
     instruction = (
@@ -169,6 +344,15 @@ def load_bias_bank(path, *, build_command=DEFAULT_BUILD_COMMAND,
         raise ValueError(
             f"{path} is incompatible with the bias workflow: "
             + "; ".join(problems) + f"\n{instruction}")
+    try:
+        evaluation, context = _evaluation_identity(bank, rf_dir=rf_dir)
+    except (FileNotFoundError, KeyError, ModuleNotFoundError, RuntimeError,
+            TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{path} cannot be authenticated for evaluation: {exc}\n"
+            f"{instruction}") from exc
+    bank.evaluation_identity = evaluation
+    bank.evaluation_context = context
     return bank
 
 
@@ -242,7 +426,24 @@ class PerBinAppendixAEstimator:
             "radiofisher_backend_required_at_evaluation": False,
             "excluded_parameters": list(EXCLUDE),
             "derived_targets": {
-                "DV": "(2/3) aperp + (1/3) apar in logarithmic units"},
+                "DV": "-(2/3 aperp + 1/3 apar) in logarithmic units"},
+        }
+
+    def response_name(self, ibin: int) -> str:
+        del ibin
+        return PRES
+
+    def target_label(self, ibin: int, param: str) -> str | None:
+        del ibin
+        return param
+
+    def target_metadata(self, ibin: int, param: str) -> dict:
+        return {
+            "target_units": (
+                "dimensionless logarithmic distance shift"
+                if param in {"aperp", "apar", "DV"} else "dimensionless"),
+            "fiducial_DV_Mpc": (
+                _fiducial_dv_mpc(self, ibin) if param == "DV" else None),
         }
 
     def system(self, ibin: int, t_hours: float) -> FisherSystem:
@@ -257,8 +458,8 @@ class PerBinAppendixAEstimator:
         if param == "DV":
             if "aperp" not in system.names or "apar" not in system.names:
                 return None, None
-            coeff[system.names.index("aperp")] = 2.0 / 3.0
-            coeff[system.names.index("apar")] = 1.0 / 3.0
+            coeff[system.names.index("aperp")] = -2.0 / 3.0
+            coeff[system.names.index("apar")] = -1.0 / 3.0
             return coeff, "DV"
         if param not in system.names:
             return None, None
@@ -275,8 +476,13 @@ class OverviewCombinedMultibinEstimator:
     def __init__(self, bank, *, rf=None, rf_dir=None, cosmo=None,
                  cosmo_fns=None, eos_derivs=None):
         self.bank = bank
+        verified = getattr(bank, "evaluation_context", None)
+        if rf is None and verified is not None:
+            rf = verified["rf"]
+            rf_dir = verified["rf_dir"]
+            cosmo = verified["cosmo"]
+            cosmo_fns = verified["cosmo_fns"]
         if rf is None:
-            from baonoise.compat import import_radiofisher
             rf, rf_dir = import_radiofisher(rf_dir)
         self.rf = rf
         self.rf_dir = Path(rf_dir).resolve() if rf_dir is not None else None
@@ -329,8 +535,6 @@ class OverviewCombinedMultibinEstimator:
                 "api_version": backend["api_version"],
                 "git_commit": backend["git_commit"],
                 "working_tree_sha256": backend["working_tree_sha256"],
-                "resolved_checkout": (str(self.rf_dir)
-                                      if self.rf_dir is not None else None),
             },
         }
 
@@ -400,6 +604,19 @@ class OverviewCombinedMultibinEstimator:
         kept_names = tuple(names[i] for i in keep)
         return FisherSystem(Ftt, FtA, kept_names, response_name)
 
+    def response_name(self, ibin: int) -> str:
+        return f"{PRES}{ibin}"
+
+    def target_label(self, ibin: int, param: str) -> str | None:
+        return f"{param}{ibin}"
+
+    def target_metadata(self, ibin: int, param: str) -> dict:
+        return {
+            "target_units": "Mpc" if param == "DV" else "dimensionless",
+            "fiducial_DV_Mpc": (
+                _fiducial_dv_mpc(self, ibin) if param == "DV" else None),
+        }
+
     def target_coefficients(self, system: FisherSystem, ibin: int,
                             param: str):
         target = f"{param}{ibin}"
@@ -408,6 +625,25 @@ class OverviewCombinedMultibinEstimator:
         coeff = np.zeros(len(system.names))
         coeff[system.names.index(target)] = 1.0
         return coeff, target
+
+
+def _fiducial_dv_mpc(estimator, ibin: int) -> float | None:
+    """Fiducial physical D_V for the target's redshift bin, when available."""
+    context = getattr(estimator.bank, "evaluation_context", None)
+    rf = getattr(estimator, "rf", None)
+    cosmo_fns = getattr(estimator, "cosmo_fns", None)
+    if context is not None:
+        rf = context["rf"]
+        cosmo_fns = context["cosmo_fns"]
+    light_speed = getattr(rf, "C", None)
+    if light_speed is None or cosmo_fns is None:
+        return None
+    z = float(estimator.bank.zc[ibin])
+    H_fn, r_fn, _, _ = cosmo_fns
+    H = float(H_fn(z))
+    DA = float(r_fn(z) / (1.0 + z))
+    return float(
+        ((1.0 + z) ** 2 * DA**2 * light_speed * z / H) ** (1.0 / 3.0))
 
 
 def make_estimator(bank, name: str, *, rf_dir=None, **kwargs):
@@ -434,6 +670,9 @@ def _solve_target(system: FisherSystem, coefficients, target_name: str) -> dict:
         "maximum_eigenvalue": None,
         "eigenvalue_cutoff": None,
         "discarded_eigenmodes": None,
+        "eigensystem_preconditioning": "sqrt_fisher_diagonal",
+        "preconditioning_scale_minimum": None,
+        "preconditioning_scale_maximum": None,
         "valid": False,
         "failure_reason": None,
     }
@@ -449,6 +688,15 @@ def _solve_target(system: FisherSystem, coefficients, target_name: str) -> dict:
         return base
 
     F = 0.5 * (F + F.T)
+    diagonal = np.diag(F)
+    scales = np.ones_like(diagonal)
+    positive_diagonal = diagonal > 0.0
+    scales[positive_diagonal] = np.sqrt(diagonal[positive_diagonal])
+    base["preconditioning_scale_minimum"] = float(np.min(scales))
+    base["preconditioning_scale_maximum"] = float(np.max(scales))
+    F = F / np.outer(scales, scales)
+    response = response / scales
+    coefficients = coefficients / scales
     eigenvalues, eigenvectors = np.linalg.eigh(F)
     largest = float(eigenvalues[-1])
     smallest = float(eigenvalues[0])
@@ -521,33 +769,69 @@ def _time_scaling_multiplier(time_scaling: str, t_hours: float,
         f"unknown time scaling {time_scaling!r}; choose from {TIME_SCALINGS}")
 
 
+def _bank_time_grid_position(bank, t_hours: float) -> str:
+    minimum = float(bank.t_grid[0])
+    maximum = float(bank.t_grid[-1])
+    if t_hours < minimum:
+        return "below_minimum"
+    if t_hours > maximum:
+        return "above_maximum"
+    return "inside"
+
+
+def _invalid_evaluation(estimator, ibin: int, t_hours: float, param: str,
+                        *, time_scaling: str,
+                        reference_hours: float | None,
+                        position: str, reason: str) -> dict:
+    metadata = estimator.target_metadata(ibin, param)
+    return {
+        "target_name": estimator.target_label(ibin, param),
+        "target_units": metadata["target_units"],
+        "fiducial_DV_Mpc": metadata["fiducial_DV_Mpc"],
+        "response_name": estimator.response_name(ibin),
+        "bank_time_grid_position": position,
+        "sigma": None,
+        "dtheta_d_current_noise_ratio": None,
+        "time_scaling_multiplier": _time_scaling_multiplier(
+            time_scaling, t_hours, reference_hours),
+        "dtheta_d_reported_amplitude": None,
+        "r_tolerance_current_noise_ratio": None,
+        "r_tolerance": None,
+        "condition_number": None,
+        "minimum_eigenvalue": None,
+        "maximum_eigenvalue": None,
+        "eigenvalue_cutoff": None,
+        "discarded_eigenmodes": None,
+        "eigensystem_preconditioning": "sqrt_fisher_diagonal",
+        "preconditioning_scale_minimum": None,
+        "preconditioning_scale_maximum": None,
+        "valid": False,
+        "failure_reason": reason,
+    }
+
+
 def evaluate_raw(estimator, ibin: int, t_hours: float, param: str,
                  *, zeta: float, time_scaling: str,
-                 reference_hours: float | None) -> dict:
+                 reference_hours: float | None,
+                 enforce_bank_bounds: bool = True) -> dict:
     """Evaluate one estimator/bin/time/parameter point before stability gating."""
+    position = _bank_time_grid_position(estimator.bank, t_hours)
+    if enforce_bank_bounds and position != "inside":
+        return _invalid_evaluation(
+            estimator, ibin, t_hours, param, time_scaling=time_scaling,
+            reference_hours=reference_hours, position=position,
+            reason="outside_bank_time_grid")
     system = estimator.system(ibin, t_hours)
     coefficients, target_name = estimator.target_coefficients(
         system, ibin, param)
     if coefficients is None:
-        return {
-            "target_name": None,
-            "response_name": system.response_name,
-            "sigma": None,
-            "dtheta_d_current_noise_ratio": None,
-            "time_scaling_multiplier": _time_scaling_multiplier(
-                time_scaling, t_hours, reference_hours),
-            "dtheta_d_reported_amplitude": None,
-            "r_tolerance_current_noise_ratio": None,
-            "r_tolerance": None,
-            "condition_number": None,
-            "minimum_eigenvalue": None,
-            "maximum_eigenvalue": None,
-            "eigenvalue_cutoff": None,
-            "discarded_eigenmodes": None,
-            "valid": False,
-            "failure_reason": "requested_parameter_not_in_estimator",
-        }
+        return _invalid_evaluation(
+            estimator, ibin, t_hours, param, time_scaling=time_scaling,
+            reference_hours=reference_hours, position=position,
+            reason="requested_parameter_not_in_estimator")
     solved = _solve_target(system, coefficients, target_name)
+    solved.update(estimator.target_metadata(ibin, param))
+    solved["bank_time_grid_position"] = position
     multiplier = _time_scaling_multiplier(
         time_scaling, t_hours, reference_hours)
     solved["time_scaling_multiplier"] = multiplier
@@ -583,7 +867,8 @@ def evaluate_fisher_point(estimator, ibin: int, t_hours: float, param: str,
                           time_scaling: str = NOISE_NORMALIZED_AT_EACH_TIME,
                           reference_hours: float | None = None,
                           stability_fraction: float = 0.10,
-                          max_drift: float = 1.2) -> dict:
+                          max_drift: float = 1.2,
+                          enforce_bank_bounds: bool = True) -> dict:
     """Evaluate and gate one requested Fisher point, retaining all evidence."""
     if not np.isfinite(t_hours) or t_hours <= 0.0:
         raise ValueError("t_hours must be positive and finite")
@@ -605,7 +890,8 @@ def evaluate_fisher_point(estimator, ibin: int, t_hours: float, param: str,
     for label, scale in scales:
         evaluated = evaluate_raw(
             estimator, ibin, t_hours * scale, param, zeta=zeta,
-            time_scaling=time_scaling, reference_hours=reference_hours)
+            time_scaling=time_scaling, reference_hours=reference_hours,
+            enforce_bank_bounds=enforce_bank_bounds)
         perturbations.append({
             "label": label,
             "scale": float(scale),
@@ -682,7 +968,8 @@ def dtv_bin_indices(bank) -> list[int]:
 def build_report(bank, bank_path: Path, estimator, *, bins, years, params,
                  zeta: float, time_scaling: str,
                  reference_hours: float | None,
-                 stability_fraction: float, max_drift: float) -> dict:
+                 stability_fraction: float, max_drift: float,
+                 enforce_bank_bounds: bool = True) -> dict:
     """Build the complete machine-readable report; no point is dropped."""
     bin_reports = []
     for ibin in bins:
@@ -698,7 +985,8 @@ def build_report(bank, bank_path: Path, estimator, *, bins, years, params,
                         time_scaling=time_scaling,
                         reference_hours=reference_hours,
                         stability_fraction=stability_fraction,
-                        max_drift=max_drift)
+                        max_drift=max_drift,
+                        enforce_bank_bounds=enforce_bank_bounds)
                     for param in params
                 },
             })
@@ -728,6 +1016,10 @@ def build_report(bank, bank_path: Path, estimator, *, bins, years, params,
         })
 
     bank_response = bank.meta["expt_overrides"]["P_res"]
+    canonical_overrides = json.loads(json.dumps(
+        bank.meta["expt_overrides"], sort_keys=True, allow_nan=False))
+    canonical_foregrounds = json.loads(json.dumps(
+        bank.meta["foreground_settings"], sort_keys=True, allow_nan=False))
     return {
         "schema": REPORT_SCHEMA,
         "schema_version": 1,
@@ -743,11 +1035,24 @@ def build_report(bank, bank_path: Path, estimator, *, bins, years, params,
             "astrophysical_model_profile":
                 bank.meta["astrophysical_model_profile"],
             "P_res": bank_response,
+            "expt_overrides": canonical_overrides,
+            "expt_overrides_sha256": _sha256_json(canonical_overrides),
+            "foreground_settings": canonical_foregrounds,
+            "foreground_settings_sha256": _sha256_json(
+                canonical_foregrounds),
+            "time_grid": {
+                "minimum_hours": float(bank.t_grid[0]),
+                "maximum_hours": float(bank.t_grid[-1]),
+                "number_of_samples": int(len(bank.t_grid)),
+            },
             "built_utc": bank.meta["provenance"]["built_utc"],
-            "baonoise_working_tree_sha256":
-                bank.meta["provenance"]["baonoise"]["working_tree_sha256"],
-            "radiofisher_working_tree_sha256":
-                bank.meta["provenance"]["radiofisher"]["working_tree_sha256"],
+            "scientific_identity": {
+                "schema": "baonoise-scientific-evaluation-identity-v1",
+                "schema_version": 1,
+                "bank_build": _bank_build_identity(bank),
+                "evaluation": bank.evaluation_identity,
+                "verified_equal": True,
+            },
         },
         "estimator": estimator.provenance,
         "residual_amplitude": {
@@ -756,6 +1061,11 @@ def build_report(bank, bank_path: Path, estimator, *, bins, years, params,
                 "ratio to thermal-noise power at each evaluated time"
                 if time_scaling == NOISE_NORMALIZED_AT_EACH_TIME else
                 "ratio to thermal-noise power at the declared reference time"),
+            "physical_interpretation": (
+                "stationary finite-correlation residual power averaging down "
+                "with thermal power"
+                if time_scaling == NOISE_NORMALIZED_AT_EACH_TIME else
+                "non-averaging persistent physical residual power"),
             "reference_hours": (
                 float(reference_hours) if reference_hours is not None else None),
             "reference_years": (
@@ -883,7 +1193,7 @@ def main(argv=None):
     _validate_cli_numbers(ap, args)
 
     try:
-        bank = load_bias_bank(args.bank)
+        bank = load_bias_bank(args.bank, rf_dir=args.radiofisher_dir)
     except ValueError as exc:
         ap.error(str(exc))
     bins = dtv_bin_indices(bank) if args.bins is None else list(args.bins)
@@ -919,7 +1229,8 @@ def main(argv=None):
         params=params, zeta=args.zeta, time_scaling=args.time_scaling,
         reference_hours=reference_hours,
         stability_fraction=args.stability_fraction,
-        max_drift=args.max_drift)
+        max_drift=args.max_drift,
+        enforce_bank_bounds=args.json_format == "complete-v1")
 
     response = bank.meta.get("expt_overrides", {}).get("P_res")
     print(f"bank {args.bank.name}  P_res={response}  zeta={args.zeta}")

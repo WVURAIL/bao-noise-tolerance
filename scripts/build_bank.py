@@ -6,10 +6,9 @@ from pathlib import Path
 import numpy as np
 
 from baonoise.fisherbank import build_bank
+from baonoise.residual_templates import (FAMILIES, make_template,
+                                         parse_parameter_assignments)
 from baonoise.resources import BANK_NAMES
-
-from residual_templates import (FAMILIES, make_template,
-                                 parse_parameter_assignments)
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

@@ -22,8 +22,9 @@
       "required": [
         "path", "filename", "sha256", "schema_version", "artifact_kind",
         "config", "cosmology", "astrophysical_model_profile", "P_res",
-        "built_utc", "baonoise_working_tree_sha256",
-        "radiofisher_working_tree_sha256"
+        "expt_overrides", "expt_overrides_sha256", "foreground_settings",
+        "foreground_settings_sha256", "time_grid", "built_utc",
+        "scientific_identity"
       ],
       "properties": {
         "path": {"type": "string"},
@@ -35,9 +36,51 @@
         "cosmology": {"type": "string"},
         "astrophysical_model_profile": {"type": "string"},
         "P_res": {},
+        "expt_overrides": {"type": "object"},
+        "expt_overrides_sha256": {"$ref": "#/$defs/sha256"},
+        "foreground_settings": {
+          "type": "object",
+          "required": ["epsilon_fg", "k_nl0", "kfg_fac", "wedge", "use"],
+          "properties": {
+            "epsilon_fg": {},
+            "k_nl0": {},
+            "kfg_fac": {"type": ["number", "null"]},
+            "wedge": {},
+            "use": {}
+          },
+          "additionalProperties": false
+        },
+        "foreground_settings_sha256": {"$ref": "#/$defs/sha256"},
+        "time_grid": {
+          "type": "object",
+          "required": [
+            "minimum_hours", "maximum_hours", "number_of_samples"
+          ],
+          "properties": {
+            "minimum_hours": {"type": "number", "exclusiveMinimum": 0},
+            "maximum_hours": {"type": "number", "exclusiveMinimum": 0},
+            "number_of_samples": {"type": "integer", "minimum": 2}
+          },
+          "additionalProperties": false
+        },
         "built_utc": {"type": "string", "format": "date-time"},
-        "baonoise_working_tree_sha256": {"$ref": "#/$defs/nullableSha256"},
-        "radiofisher_working_tree_sha256": {"$ref": "#/$defs/nullableSha256"}
+        "scientific_identity": {
+          "type": "object",
+          "required": [
+            "schema", "schema_version", "bank_build", "evaluation",
+            "verified_equal"
+          ],
+          "properties": {
+            "schema": {
+              "const": "baonoise-scientific-evaluation-identity-v1"
+            },
+            "schema_version": {"const": 1},
+            "bank_build": {"$ref": "#/$defs/scientificInputs"},
+            "evaluation": {"$ref": "#/$defs/scientificInputs"},
+            "verified_equal": {"const": true}
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
@@ -55,7 +98,8 @@
     "residual_amplitude": {
       "type": "object",
       "required": [
-        "time_scaling", "reported_amplitude_unit", "reference_hours",
+        "time_scaling", "reported_amplitude_unit", "physical_interpretation",
+        "reference_hours",
         "reference_years", "thermal_power_scaling_assumption",
         "bank_response_definition", "reported_amplitude_application"
       ],
@@ -67,6 +111,7 @@
           ]
         },
         "reported_amplitude_unit": {"type": "string"},
+        "physical_interpretation": {"type": "string"},
         "reference_hours": {"$ref": "#/$defs/nullableNumber"},
         "reference_years": {"$ref": "#/$defs/nullableNumber"},
         "thermal_power_scaling_assumption": {"type": "string"},
@@ -103,14 +148,34 @@
       "oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]
     },
     "nullableNumber": {"type": ["number", "null"]},
+    "scientificInputs": {
+      "type": "object",
+      "required": [
+        "baonoise", "radiofisher", "cosmology", "pk_cache", "experiment"
+      ],
+      "properties": {
+        "built_utc": {"type": "string", "format": "date-time"},
+        "baonoise": {"type": "object"},
+        "radiofisher": {"type": "object"},
+        "cosmology": {"type": "object"},
+        "pk_cache": {"type": "object"},
+        "experiment": {"type": "object"},
+        "expt_overrides": {"type": "object"},
+        "foreground_settings": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
     "evaluation": {
       "type": "object",
       "required": [
         "label", "scale", "t_hours", "target_name", "response_name",
+        "target_units", "fiducial_DV_Mpc", "bank_time_grid_position",
         "sigma", "dtheta_d_current_noise_ratio", "time_scaling_multiplier",
         "dtheta_d_reported_amplitude", "r_tolerance_current_noise_ratio",
         "r_tolerance", "condition_number", "minimum_eigenvalue",
         "maximum_eigenvalue", "eigenvalue_cutoff", "discarded_eigenmodes",
+        "eigensystem_preconditioning", "preconditioning_scale_minimum",
+        "preconditioning_scale_maximum",
         "valid", "failure_reason"
       ],
       "properties": {
@@ -118,7 +183,12 @@
         "scale": {"type": "number"},
         "t_hours": {"type": "number"},
         "target_name": {"type": ["string", "null"]},
+        "target_units": {"type": "string"},
+        "fiducial_DV_Mpc": {"$ref": "#/$defs/nullableNumber"},
         "response_name": {"type": "string"},
+        "bank_time_grid_position": {
+          "enum": ["below_minimum", "inside", "above_maximum"]
+        },
         "sigma": {"$ref": "#/$defs/nullableNumber"},
         "dtheta_d_current_noise_ratio": {"$ref": "#/$defs/nullableNumber"},
         "time_scaling_multiplier": {"type": "number"},
@@ -130,6 +200,15 @@
         "maximum_eigenvalue": {"$ref": "#/$defs/nullableNumber"},
         "eigenvalue_cutoff": {"$ref": "#/$defs/nullableNumber"},
         "discarded_eigenmodes": {"type": ["integer", "null"]},
+        "eigensystem_preconditioning": {
+          "const": "sqrt_fisher_diagonal"
+        },
+        "preconditioning_scale_minimum": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "preconditioning_scale_maximum": {
+          "$ref": "#/$defs/nullableNumber"
+        },
         "valid": {"type": "boolean"},
         "failure_reason": {"type": ["string", "null"]}
       },

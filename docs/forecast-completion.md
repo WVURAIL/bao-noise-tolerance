@@ -16,8 +16,11 @@ bank.
 This is the pre-existing dissertation calculation. For each requested
 redshift bin it removes `{b_HI, f, Tb, sigma8tot, n_s, pk}`, inverts that bin
 alone, and reports targets in the remaining
-`{A, sigma_NL, aperp, apar, fs8, bs8}` system. `DV` is also available as the
-linear logarithmic combination `(2/3) aperp + (1/3) apar`. The historical
+`{A, sigma_NL, aperp, apar, fs8, bs8}` system. In RadioFisher's dilation
+convention, `DV` is also available as the logarithmic combination
+`-(2/3 aperp + 1/3 apar)`. The minus sign is required because `aperp` and
+`apar` describe coordinate dilation in the inverse direction from the
+physical distance perturbation. The historical
 `split`, `bias_per_unit_r`, `condition`, and `stability` functions remain
 available with unchanged signatures for the existing figure scripts.
 
@@ -49,8 +52,10 @@ the historical global rows. The published script used the older spelling
 numerically dependent row. The report records the full API sequence,
 expanded parameters, exclusions, backend revision, and backend source digest.
 
-The combined target `DV` is an absolute distance internally and the per-bin
-target is logarithmic. This does not affect `r_tolerance = zeta sigma/|dtheta/dr|`
+The combined target `DV` is an absolute distance in Mpc internally and the
+per-bin target is a dimensionless logarithmic shift. Every evaluation records
+both `target_units` and, for `DV`, the bin's fiducial `DV` in Mpc. This choice
+does not affect `r_tolerance = zeta sigma/|dtheta/dr|`
 because a linear rescaling multiplies the numerator and denominator equally.
 Absolute errors should nevertheless be compared only after converting both to
 the same fractional convention.
@@ -62,16 +67,21 @@ each evaluated integration time. The report requires one of two names:
 
 ### `noise_normalized_at_each_time`
 
-The reported amplitude is `r(t) = P_res(t)/P_N(t)`. A unit response is tied to
-the contemporaneous thermal power at every time. This is the convention used
-by the legacy convergence figure; it is a family of differently normalized
-physical templates, not one contaminant followed through time.
+The reported amplitude is `r(t) = P_res(t)/P_N(t)`, held constant as time
+changes. A unit response is tied to the contemporaneous thermal power at every
+time. Physically, this is the stationary, finite-correlation-time limit: after
+many independent correlation lengths, residual power and thermal power both
+average down approximately as `1/t`. The Fisher model stipulates that scaling;
+it does not infer the residual's correlation time from telescope data. This is
+the convention used by the legacy convergence figure.
 
 ### `fixed_physical_at_reference_time`
 
 The reported amplitude is `r_ref = P_res/P_N(t_ref)` at the explicitly supplied
-`--reference-years`. Since the bank's thermal power obeys `P_N proportional to
-1/t`, its response is multiplied by
+`--reference-years`. This is the deliberately conservative, non-averaging
+persistent-residual limit: physical residual power is held fixed while the
+thermal power continues to fall. Since the bank's thermal power obeys
+`P_N proportional to 1/t`, its response is multiplied by
 
 ```
 r(t) / r_ref = t / t_ref.
@@ -79,7 +89,9 @@ r(t) / r_ref = t / t_ref.
 
 The two families agree exactly at `t_ref`. Away from it they answer different
 questions. A fixed physical contaminant becomes larger relative to thermal
-noise as the integration grows.
+noise as the integration grows. The model does not claim that a measured
+pilot residual actually has this persistence; that requires the missing
+visibility-domain time/coherence characterization.
 
 ## Stability and refusals
 
@@ -87,7 +99,19 @@ Every requested `(bin, time, parameter)` record contains the lower, central,
 and upper evaluations at `t * (1-delta, 1, 1+delta)`. No failed point is
 dropped. Each perturbation includes the Fisher eigenvalue range, cutoff,
 condition number, number of discarded modes, statistical error, raw response,
-time-family multiplier, reported response, and tolerance.
+time-family multiplier, reported response, tolerance, target unit, fiducial
+`DV`, and its location relative to the bank time grid. Before applying the
+relative eigenvalue cut, the solver scales each Fisher coordinate by the
+square root of its positive diagonal element. This makes the null-mode test
+invariant to a mere change of parameter units; the report records the
+preconditioner and its scale range.
+
+Complete-v1 refuses both `t < t_min` and `t > t_max`, including a lower or
+upper stability perturbation that crosses either edge. Such a perturbation is
+retained with `bank_time_grid_position` equal to `below_minimum` or
+`above_maximum` and `failure_reason=outside_bank_time_grid`. The legacy JSON
+path retains the historical behavior: its below-grid `t^2` continuation and
+above-grid cap are unchanged for existing consumers.
 
 The refusal gate is applied to `r_tolerance_current_noise_ratio`, before the
 deterministic `t/t_ref` conversion. This tests numerical movement and response
@@ -123,10 +147,15 @@ python3 scripts/build_bank.py \
   --dense-knee --out data/fisher_bank_low_kparallel.npz
 ```
 
-The callable object is also a JSON dictionary, so the bank records its family,
-normalization, unit amplitude, and parameters in both `expt_overrides` and the
-experiment-provenance digest. A named-template bank passes the same strict-v2
-unit-response checks as the scalar noise-shaped bank.
+The formulas live in the authenticated package module
+`src/baonoise/residual_templates.py`, not only in an unauthenticated research
+script. The callable object is also a JSON dictionary, so the bank records its
+family, normalization, unit amplitude, parameters, template API version, and
+formula-source SHA-256 in both `expt_overrides` and the experiment-provenance
+digest. On load, named metadata is reconstructed with the installed module and
+must match exactly. A named-template bank therefore fails closed when a formula
+or default changes and passes the same strict-v2 unit-response checks as the
+scalar noise-shaped bank.
 
 The callable interface has no observing frequency, redshift-bin identity,
 baseline vector, sidereal time, or measured visibility residual. Therefore it
@@ -165,7 +194,13 @@ python3 scripts/bias_tolerance.py \
 `--bins` accepts zero-based bank-bin indices for a bounded evidence run. Its
 default is every redshift bin overlapping the physical 470--608 MHz DTV band.
 An explicit combined path fails if the local RadioFisher checkout is absent or
-lacks any required API.
+lacks any required API. Loading any bias-response bank also reconstructs the
+runtime Bao and RadioFisher scientific-source identities and compares their
+canonical content SHA-256 values with the bank-build identities. It separately
+reconstructs the named cosmology, validates the packaged P(k) cache and its
+metadata/content digest, and reconstructs the canonical experiment and
+baseline digest. A mismatch refuses evaluation; a compatible Git commit label
+alone is not accepted as proof of identical scientific source.
 
 ## Reproducible bounded evidence run
 
@@ -191,14 +226,37 @@ python3 scripts/forecast_completion_evidence.py \
 
 The evidence command refuses a bank whose time grid would require
 extrapolation at any lower or upper stability perturbation. It records the
-bank's numerical-grid digest, the authenticated source digests, every
-lower/central/upper evaluation, every acceptance or rejection, equality of the
-two amplitude conventions at the reference time, and the `t/t_ref` scaling
-away from it. Content hashes bind the evidence to the exact evaluator,
+bank's numerical-grid digest, separate bank-build and runtime-evaluation
+identities, canonical experiment overrides, foreground settings and their
+digests, time-grid bounds, every lower/central/upper evaluation, every
+acceptance or rejection, and checks of the
+bank-native response and tolerance between amplitude families at every
+requested bin/time/parameter, and the `t/t_ref` response/tolerance scaling
+away from the reference. Content hashes bind the evidence to the exact
+evaluator,
 evidence runner, and bank-building wrapper even though research scripts are
 intentionally outside the bank's authenticated scientific-source manifest. It
-does not read pilot data and is not evidence for an empirical visibility
-residual shape.
+contains no absolute checkout path. It does not read pilot data and is not
+evidence for an empirical visibility residual shape.
+
+An all-DTV-bin export uses the same three-point bank and includes every one of
+the seven redshift bins that overlaps the physical 470--608 MHz DTV band:
+
+```bash
+PYTHONPATH=src RADIOFISHER_DIR=/path/to/RadioFisher \
+python3 scripts/forecast_completion_evidence.py \
+  --bank /tmp/bias_response_small.npz \
+  --all-dtv-bins --years 0.9 1 1.1 --reference-years 1 \
+  --out out/forecast_completion_all_dtv_bins.json
+```
+
+Both evidence files use the explicitly versioned
+`baonoise-forecast-completion-evidence-v2` envelope. The all-bin export carries
+complete combined-estimator ledgers for both time families and is the input
+for subsequent channel-policy propagation; it does not itself alter measured
+channel masks or choose an excision policy. Its machine-readable contract is
+`docs/forecast-completion-evidence.schema.json`; the output records that
+schema document's SHA-256 alongside the evaluator and builder-wrapper hashes.
 
 ## JSON contract
 
@@ -217,8 +275,12 @@ is emitted with
 `allow_nan=False`: unavailable or refused quantities are `null`, never the
 non-standard tokens `NaN` or `Infinity`.
 
-The top-level provenance binds the bank digest, bank/source identities,
-estimator/backend identity, template metadata, time family, reference time,
-request, and stability policy. `bins[].points[].parameters` contains one entry
-for every requested target. Consumers must test `accepted` and must not infer
-acceptance merely from the presence of a central numerical value.
+The top-level provenance binds the bank digest, the versioned
+`baonoise-scientific-evaluation-identity-v1` record (bank build and runtime
+evaluation shown separately), estimator/backend identity, template metadata,
+time family, reference time, request, and stability policy. Canonical
+`expt_overrides` and `foreground_settings` each carry a JSON SHA-256. In
+particular, `kfg_fac: null` means no delay-filter override and is not
+interchangeable with `kfg_fac: 80`. `bins[].points[].parameters` contains one
+entry for every requested target. Consumers must test `accepted` and must not
+infer acceptance merely from the presence of a central numerical value.

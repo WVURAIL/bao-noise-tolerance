@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Noise-normalized convergence for the legacy screening family.
 
-This figure deliberately evaluates ``noise_normalized_at_each_time``: the
-residual template is re-normalized to the contemporaneous thermal-noise power
-at every plotted time. It does not describe a fixed physical contaminant.
+This figure deliberately evaluates ``noise_normalized_at_each_time``: a
+stationary finite-correlation residual whose power averages down with the
+contemporaneous thermal-noise power. It does not describe a fixed physical,
+non-averaging contaminant.
 
 Both fall. In the noise-dominated regime the Fisher information grows as t^2,
 so sigma(fs8) falls roughly as 1/t, and the bias a residual induces falls at
@@ -12,8 +13,9 @@ the survey's entire realistic range the ratio |Delta fs8| / sigma(fs8) moves by
 a few percent. Integration shrinks the error bar and the bias in lockstep.
 
 Within that declared family the answer is nearly the same number of sigma wrong
-on day one and after ten years. A fixed physical/reference-time family instead
-includes the deterministic t/t_ref response scaling and is available through
+on day one and after ten years. A persistent fixed-physical/reference-time
+limit instead includes the deterministic t/t_ref response scaling and is
+available through
 ``scripts/bias_tolerance.py --time-scaling
 fixed_physical_at_reference_time --reference-years ...``. The two hypotheses
 coincide only at the reference time.

@@ -1,22 +1,24 @@
-"""Named analytic ``P_res`` templates for model-sensitivity Fisher banks.
+"""Authenticated analytic residual shapes for bias-response Fisher banks.
 
-RadioFisher's callable interface receives ``(k, u, P_N, P_signal)`` and must
-return additive power on that grid.  The families here are therefore honest
-only about structure expressible on that grid.  In particular, this module
-does not pretend to provide an empirical visibility template, a frequency-bin
-template, or a sidereal-coherence model; those require additional coordinates
-and measured visibility products.
+RadioFisher's callable interface receives ``(k, u, P_N, P_signal)``. These
+families intentionally use only those coordinates. An empirical visibility,
+frequency-bin, baseline, or sidereal-time template requires additional data
+and is not represented here.
 
-Each template is also a JSON-serializable ``dict``.  That is intentional: a
-bias-response bank must record the exact family and parameters in both
-``expt_overrides.P_res`` and experiment provenance, while the same object must
-remain callable during the RadioFisher integration.
+Each callable is also a JSON dictionary. Its metadata includes this module's
+API version and canonical source digest, so a loaded bank can fail closed if
+the formula implementation at evaluation differs from the implementation
+used to build the bank.
 """
 from __future__ import annotations
 
+import hashlib
+from importlib.resources import files
 from numbers import Real
 
 import numpy as np
+
+TEMPLATE_API_VERSION = 1
 
 NOISE_SHAPED = "noise_shaped"
 LOW_KPARALLEL = "low_kparallel"
@@ -39,6 +41,13 @@ DEFAULT_PARAMETERS = {
 }
 
 
+def implementation_sha256() -> str:
+    """Canonical digest of the exact source that implements the formulas."""
+    source = files("baonoise").joinpath("residual_templates.py").read_bytes()
+    source = source.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(source).hexdigest()
+
+
 def _positive(value, name: str) -> float:
     if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
         raise TypeError(f"{name} must be a real scalar")
@@ -58,7 +67,7 @@ def _nonnegative(value, name: str) -> float:
 
 
 class NamedResidualTemplate(dict):
-    """Callable additive-power template with stable JSON provenance."""
+    """Callable additive-power template with authenticated JSON provenance."""
 
     def __init__(self, family: str, **parameters):
         if family not in FAMILIES:
@@ -90,6 +99,8 @@ class NamedResidualTemplate(dict):
             family=family,
             amplitude=1.0,
             normalization="thermal_noise_at_evaluation_time",
+            template_api_version=TEMPLATE_API_VERSION,
+            implementation_sha256=implementation_sha256(),
             parameters=resolved,
         )
 
@@ -112,7 +123,8 @@ class NamedResidualTemplate(dict):
             return np.exp(-0.5 * (k_parallel / scale) ** 2)
         if self.family == WEDGE_LIKE:
             k_parallel = np.abs(k * u)
-            k_perpendicular = np.abs(k) * np.sqrt(np.clip(1.0 - u**2, 0.0, 1.0))
+            k_perpendicular = np.abs(k) * np.sqrt(np.clip(
+                1.0 - u**2, 0.0, 1.0))
             boundary = (self.parameters["intercept_mpc_inv"]
                         + self.parameters["slope"] * k_perpendicular)
             outside = np.maximum(k_parallel - boundary, 0.0)
@@ -132,6 +144,22 @@ def make_template(family: str, parameters: dict | None = None) \
     return NamedResidualTemplate(family, **dict(parameters or {}))
 
 
+def validate_template_metadata(value: dict) -> dict:
+    """Return canonical metadata or reject stale/tampered formula identity."""
+    if not isinstance(value, dict):
+        raise TypeError("named residual-template metadata must be an object")
+    family = value.get("family")
+    parameters = value.get("parameters")
+    if not isinstance(parameters, dict):
+        raise ValueError("named residual-template parameters must be an object")
+    expected = dict(make_template(family, parameters))
+    if value != expected:
+        raise ValueError(
+            "named residual-template metadata does not match the installed "
+            "authenticated implementation; rebuild the response bank")
+    return expected
+
+
 def parse_parameter_assignments(assignments) -> dict:
     """Parse repeatable CLI ``NAME=VALUE`` assignments without silent wins."""
     out = {}
@@ -142,11 +170,12 @@ def parse_parameter_assignments(assignments) -> dict:
         name, raw = assignment.split("=", 1)
         if not name or name.strip() != name or name in out:
             raise ValueError(
-                f"template parameter name is empty, padded, or duplicated: "
+                "template parameter name is empty, padded, or duplicated: "
                 f"{name!r}")
         try:
             out[name] = float(raw)
         except ValueError as exc:
             raise ValueError(
-                f"template parameter {name!r} must have a numeric value") from exc
+                f"template parameter {name!r} must have a numeric value") \
+                from exc
     return out
